@@ -15,8 +15,8 @@ import {
   BarChart2,
   Calendar,
   Plus,
-  Sparkles,
-  Upload
+  Trash2,
+  Square
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import AiToneModal from './AiToneModal';
@@ -28,12 +28,12 @@ import ShareContactModal from './ShareContactModal';
 
 // Default built-in sticker pack
 const DEFAULT_STICKERS = [
-  { id: 'stk_1', label: 'Celebrate', emoji: '🎉', url: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=120' },
-  { id: 'stk_2', label: 'Heart Eyes', emoji: '😍', url: 'https://images.unsplash.com/photo-1518199266791-5375a83190b7?w=120' },
-  { id: 'stk_3', label: 'Fire', emoji: '🔥', url: 'https://images.unsplash.com/photo-1542385151-efd9000785a0?w=120' },
-  { id: 'stk_4', label: 'Cool Cat', emoji: '😎', url: 'https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=120' },
-  { id: 'stk_5', label: 'Rocket', emoji: '🚀', url: 'https://images.unsplash.com/photo-1517976487588-41dfa7d65377?w=120' },
-  { id: 'stk_6', label: 'Super Star', emoji: '⭐', url: 'https://images.unsplash.com/photo-1506703719100-a0f3a48c0f86?w=120' }
+  { id: 'stk_1', label: 'Celebrate', emoji: '🎉', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%2325d366" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">🎉</text></svg>' },
+  { id: 'stk_2', label: 'Heart Eyes', emoji: '😍', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ff3b30" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">😍</text></svg>' },
+  { id: 'stk_3', label: 'Fire', emoji: '🔥', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ff9500" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">🔥</text></svg>' },
+  { id: 'stk_4', label: 'Cool Cat', emoji: '😎', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23007aff" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">😎</text></svg>' },
+  { id: 'stk_5', label: 'Rocket', emoji: '🚀', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23af52de" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">🚀</text></svg>' },
+  { id: 'stk_6', label: 'Super Star', emoji: '⭐', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ffcc00" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">⭐</text></svg>' }
 ];
 
 // Reaction GIFs
@@ -56,20 +56,28 @@ export default function Composer({
 }) {
   const [text, setText] = useState('');
   const [imagePreview, setImagePreview] = useState(null);
-  const [pendingAttachment, setPendingAttachment] = useState(null); // { type: 'document'|'audio', fileName, fileSize, fileUrl }
+  const [pendingAttachment, setPendingAttachment] = useState(null); // { type, fileName, fileSize, fileUrl }
 
   // Modals & Popovers
   const [showToneModal, setShowToneModal] = useState(false);
   const [showScheduleModal, setShowScheduleModal] = useState(false);
   const [showAttachMenu, setShowAttachMenu] = useState(false);
   const [showEmojiTray, setShowEmojiTray] = useState(false);
-  const [activeEmojiTab, setActiveEmojiTab] = useState('emojis'); // 'emojis' | 'gifs' | 'stickers'
+  const [activeEmojiTab, setActiveEmojiTab] = useState('emojis');
 
-  // Sub-modals for 7 attachments
+  // Sub-modals for attachments
   const [showCameraModal, setShowCameraModal] = useState(false);
   const [showPollModal, setShowPollModal] = useState(false);
   const [showEventModal, setShowEventModal] = useState(false);
   const [showContactModal, setShowContactModal] = useState(false);
+
+  // Real Microphone Recording States
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+  const recordTimerRef = useRef(null);
+  const audioStreamRef = useRef(null);
 
   // Custom user stickers from localStorage
   const [customStickers, setCustomStickers] = useState(() => {
@@ -80,7 +88,7 @@ export default function Composer({
     }
   });
 
-  // Refs for hidden inputs & click outside
+  // Refs for hidden inputs
   const photoInputRef = useRef(null);
   const docInputRef = useRef(null);
   const audioInputRef = useRef(null);
@@ -95,35 +103,155 @@ export default function Composer({
         setShowAttachMenu(false);
       }
       if (emojiTrayRef.current && !emojiTrayRef.current.contains(e.target)) {
-        // Only close if not clicking the toggle button
         if (!e.target.closest('#emoji-toggle-btn')) {
           setShowEmojiTray(false);
         }
       }
     };
-
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
+  // Clean up recording timer on unmount
+  useEffect(() => {
+    return () => {
+      if (recordTimerRef.current) clearInterval(recordTimerRef.current);
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((track) => track.stop());
+      }
+    };
+  }, []);
+
+  // Format seconds to mm:ss
+  const formatRecordingTime = (secs) => {
+    const mins = Math.floor(secs / 60);
+    const rem = secs % 60;
+    return `${mins}:${rem < 10 ? '0' : ''}${rem}`;
+  };
+
+  // Real Mic Recording: Start
+  const startRecording = async () => {
+    try {
+      if (!navigator.mediaDevices?.getUserMedia) {
+        alert('Microphone access is not supported in this browser.');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      audioStreamRef.current = stream;
+      audioChunksRef.current = [];
+
+      let mimeType = 'audio/webm';
+      if (!MediaRecorder.isTypeSupported('audio/webm')) {
+        if (MediaRecorder.isTypeSupported('audio/mp4')) mimeType = 'audio/mp4';
+        else if (MediaRecorder.isTypeSupported('audio/ogg')) mimeType = 'audio/ogg';
+        else mimeType = '';
+      }
+
+      const recorder = mimeType ? new MediaRecorder(stream, { mimeType }) : new MediaRecorder(stream);
+      mediaRecorderRef.current = recorder;
+
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) {
+          audioChunksRef.current.push(e.data);
+        }
+      };
+
+      recorder.start(100);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      recordTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      console.warn('Microphone permission or recording error:', err);
+      alert('Could not access microphone. Please ensure microphone permissions are granted in your browser settings.');
+    }
+  };
+
+  // Real Mic Recording: Stop and Send
+  const stopAndSendRecording = () => {
+    if (!mediaRecorderRef.current || !isRecording) return;
+
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+
+    const currentDuration = recordingSeconds;
+
+    mediaRecorderRef.current.onstop = () => {
+      const audioBlob = new Blob(audioChunksRef.current, {
+        type: mediaRecorderRef.current.mimeType || 'audio/webm'
+      });
+
+      // Stop stream tracks
+      if (audioStreamRef.current) {
+        audioStreamRef.current.getTracks().forEach((t) => t.stop());
+        audioStreamRef.current = null;
+      }
+
+      // Convert audio blob to base64 Data URL for instant playback and sync
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        const base64Audio = reader.result;
+        onSendMessage({
+          text: '',
+          mediaType: 'audio',
+          mediaUrl: base64Audio,
+          duration: currentDuration || 1,
+          fileName: `Voice_${Date.now().toString().slice(-4)}.m4a`
+        });
+      };
+      reader.readAsDataURL(audioBlob);
+
+      setIsRecording(false);
+      setRecordingSeconds(0);
+    };
+
+    mediaRecorderRef.current.stop();
+  };
+
+  // Real Mic Recording: Cancel
+  const cancelRecording = () => {
+    if (recordTimerRef.current) {
+      clearInterval(recordTimerRef.current);
+      recordTimerRef.current = null;
+    }
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.onstop = null;
+      try {
+        mediaRecorderRef.current.stop();
+      } catch {}
+    }
+    if (audioStreamRef.current) {
+      audioStreamRef.current.getTracks().forEach((t) => t.stop());
+      audioStreamRef.current = null;
+    }
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    audioChunksRef.current = [];
+  };
+
+  // Send typed message / images / attachments
   const handleSend = () => {
     if (!text.trim() && !imagePreview && !pendingAttachment) return;
 
-    onSendMessage({
+    const payload = {
       text: text.trim(),
-      image: imagePreview || null,
-      attachment: pendingAttachment ? pendingAttachment.fileUrl : null,
-      mediaType: pendingAttachment ? pendingAttachment.type : (imagePreview ? 'image' : null),
-      fileName: pendingAttachment ? pendingAttachment.fileName : null,
-      fileSize: pendingAttachment ? pendingAttachment.fileSize : null,
+      image: imagePreview,
       quote: replyingTo ? { sender: replyingTo.sender, text: replyingTo.text } : null,
-    });
+      attachment: pendingAttachment?.fileUrl || null,
+      mediaType: pendingAttachment?.type || (imagePreview ? 'image' : null),
+      fileName: pendingAttachment?.fileName || null,
+      fileSize: pendingAttachment?.fileSize || null,
+    };
 
+    onSendMessage(payload);
     setText('');
     setImagePreview(null);
     setPendingAttachment(null);
-    setShowAttachMenu(false);
-    setShowEmojiTray(false);
     if (onCancelReply) onCancelReply();
   };
 
@@ -134,7 +262,7 @@ export default function Composer({
     }
   };
 
-  // Image & Video File Change
+  // File Upload Handlers
   const handlePhotoVideoChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -144,7 +272,6 @@ export default function Composer({
     }
   };
 
-  // Document File Change (.pdf, .doc, .zip, etc.)
   const handleDocumentChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -163,7 +290,6 @@ export default function Composer({
     }
   };
 
-  // Audio File Change
   const handleAudioChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
@@ -182,63 +308,16 @@ export default function Composer({
     }
   };
 
-  // Custom Sticker Maker: file uploader converts image to custom sticker
-  const handleCreateCustomSticker = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (reader.result) {
-          const newSticker = {
-            id: `cust_${Date.now()}`,
-            label: 'My Sticker',
-            url: reader.result
-          };
-          const updated = [newSticker, ...customStickers];
-          setCustomStickers(updated);
-          try {
-            localStorage.setItem('nexo_custom_stickers', JSON.stringify(updated));
-          } catch {}
-        }
-      };
-      reader.readAsDataURL(file);
-    }
-  };
-
-  // Send a sticker immediately
-  const handleSendSticker = (sticker) => {
-    onSendMessage({
-      text: '',
-      stickerUrl: sticker.url,
-      isSticker: true,
-      quote: replyingTo ? { sender: replyingTo.sender, text: replyingTo.text } : null,
-    });
-    setShowEmojiTray(false);
-    if (onCancelReply) onCancelReply();
-  };
-
-  // Send a GIF immediately
-  const handleSendGif = (gif) => {
-    onSendMessage({
-      text: '',
-      image: gif.url,
-      mediaType: 'image/gif',
-      quote: replyingTo ? { sender: replyingTo.sender, text: replyingTo.text } : null,
-    });
-    setShowEmojiTray(false);
-    if (onCancelReply) onCancelReply();
-  };
-
   const hasContent = text.trim().length > 0 || imagePreview || pendingAttachment;
 
   return (
-    <div className="p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db]/80 dark:border-[#2a3942]/80 z-20 transition-colors relative font-sans select-none">
+    <div className="p-2.5 sm:p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db]/80 dark:border-[#2a3942]/80 z-20 transition-colors relative font-sans select-none">
       
       {/* 1. Reply Banner */}
       {replyingTo && (
-        <div className="mb-2 mx-2 p-2.5 rounded-xl bg-white dark:bg-[#111b21] border-l-4 border-[#0044ff] shadow-sm flex items-center justify-between text-[13px] animate-fadeIn">
+        <div className="mb-2 mx-2 p-2.5 rounded-xl bg-white dark:bg-[#111b21] border-l-4 border-[#00a884] shadow-xs flex items-center justify-between text-[13px] animate-fadeIn">
           <div className="truncate mr-2">
-            <span className="font-semibold text-[#0044ff] mr-1.5">
+            <span className="font-semibold text-[#00a884] mr-1.5">
               Replying to {replyingTo.sender}:
             </span>
             <span className="text-[#54656f] dark:text-[#aebac1] truncate">
@@ -254,13 +333,13 @@ export default function Composer({
         </div>
       )}
 
-      {/* 2. Image / Pending Attachment Preview Chips */}
+      {/* 2. Image / Attachment Preview Chips */}
       {imagePreview && (
         <div className="relative inline-block mb-2 ml-3 animate-fadeIn">
           <img
             src={imagePreview}
             alt="Upload Preview"
-            className="w-16 h-16 rounded-xl object-cover ring-2 ring-[#0044ff]"
+            className="w-16 h-16 rounded-xl object-cover ring-2 ring-[#00a884]"
           />
           <button
             onClick={() => setImagePreview(null)}
@@ -272,20 +351,17 @@ export default function Composer({
       )}
 
       {pendingAttachment && (
-        <div className="relative inline-flex items-center gap-2 mb-2 ml-3 px-3 py-2 rounded-xl bg-white dark:bg-[#111b21] border border-slate-200 dark:border-white/10 shadow-sm animate-fadeIn">
-          <div className="p-2 rounded-lg bg-[#0044ff]/10 text-[#0044ff]">
+        <div className="relative inline-flex items-center gap-2 mb-2 ml-3 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111b21] border border-slate-200 dark:border-white/10 shadow-xs animate-fadeIn">
+          <div className="p-1.5 rounded-lg bg-[#00a884]/15 text-[#00a884]">
             {pendingAttachment.type === 'document' ? (
-              <FileText className="w-5 h-5" />
+              <FileText className="w-4 h-4" />
             ) : (
-              <Headphones className="w-5 h-5" />
+              <Headphones className="w-4 h-4" />
             )}
           </div>
           <div className="text-left text-[12.5px] max-w-[180px] truncate">
             <span className="font-semibold text-[#111b21] dark:text-white block truncate">
               {pendingAttachment.fileName}
-            </span>
-            <span className="text-[#8696a0] text-[11px]">
-              {pendingAttachment.fileSize}
             </span>
           </div>
           <button
@@ -298,42 +374,15 @@ export default function Composer({
       )}
 
       {/* Hidden File Inputs */}
-      <input
-        type="file"
-        accept="image/*,video/*"
-        ref={photoInputRef}
-        onChange={handlePhotoVideoChange}
-        className="hidden"
-      />
-      <input
-        type="file"
-        accept=".pdf,.doc,.docx,.txt,.ppt,.pptx,.zip"
-        ref={docInputRef}
-        onChange={handleDocumentChange}
-        className="hidden"
-      />
-      <input
-        type="file"
-        accept="audio/*"
-        ref={audioInputRef}
-        onChange={handleAudioChange}
-        className="hidden"
-      />
-      <input
-        type="file"
-        accept="image/*"
-        ref={stickerCreatorInputRef}
-        onChange={handleCreateCustomSticker}
-        className="hidden"
-      />
+      <input type="file" accept="image/*,video/*" ref={photoInputRef} onChange={handlePhotoVideoChange} className="hidden" />
+      <input type="file" accept=".pdf,.doc,.docx,.txt,.ppt,.pptx,.zip" ref={docInputRef} onChange={handleDocumentChange} className="hidden" />
+      <input type="file" accept="audio/*" ref={audioInputRef} onChange={handleAudioChange} className="hidden" />
 
-      {/* ============================================================== */}
-      {/* 3. WHATSAPP-STYLE 7-OPTION ATTACHMENT FLOATING POPOVER         */}
-      {/* ============================================================== */}
+      {/* 3. COMPACT ATTACHMENT POPUP (28px icon circles, 13px labels, compact spacing) */}
       {showAttachMenu && (
         <div
           ref={attachMenuRef}
-          className="absolute bottom-16 left-3 sm:left-4 z-50 bg-white dark:bg-[#202c33] rounded-2xl shadow-2xl border border-slate-200/80 dark:border-white/10 p-3 w-64 animate-slideUp"
+          className="absolute bottom-14 left-2 sm:left-4 z-50 bg-white dark:bg-[#202c33] rounded-2xl shadow-xl border border-slate-200/80 dark:border-white/10 p-2 w-48 sm:w-52 animate-slideUp"
         >
           <div className="grid grid-cols-1 gap-1">
             {[
@@ -363,14 +412,14 @@ export default function Composer({
               },
               {
                 id: 'audio',
-                label: 'Audio',
+                label: 'Audio file',
                 color: 'bg-[#ff8000]',
                 icon: Headphones,
                 action: () => audioInputRef.current?.click(),
               },
               {
                 id: 'contact',
-                label: 'Contact',
+                label: 'Contact card',
                 color: 'bg-[#029eb4]',
                 icon: User,
                 action: () => {
@@ -405,12 +454,14 @@ export default function Composer({
                   key={opt.id}
                   type="button"
                   onClick={opt.action}
-                  className="flex items-center gap-3.5 px-3 py-2 rounded-xl hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer text-left transition-colors group"
+                  className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer text-left transition-colors"
                 >
-                  <div className={`w-9 h-9 rounded-full ${opt.color} text-white flex items-center justify-center shadow-sm group-hover:scale-105 transition-transform flex-shrink-0`}>
-                    <Icon className="w-4 h-4 stroke-[2.2]" />
+                  {/* Exactly 28px circle (w-7 h-7) */}
+                  <div className={`w-7 h-7 rounded-full ${opt.color} text-white flex items-center justify-center flex-shrink-0 shadow-xs`}>
+                    <Icon className="w-3.5 h-3.5 stroke-[2.2]" />
                   </div>
-                  <span className="text-[13.5px] font-medium text-[#111b21] dark:text-[#e9edef]">
+                  {/* Exactly 13px label */}
+                  <span className="text-[13px] font-medium text-[#111b21] dark:text-[#e9edef]">
                     {opt.label}
                   </span>
                 </button>
@@ -420,15 +471,12 @@ export default function Composer({
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 4. TABBED EMOJI / GIFS / STICKERS TRAY                        */}
-      {/* ============================================================== */}
+      {/* 4. TABBED EMOJI / GIFS / STICKERS TRAY */}
       {showEmojiTray && (
         <div
           ref={emojiTrayRef}
-          className="absolute bottom-16 left-2 sm:left-12 z-50 bg-white dark:bg-[#202c33] rounded-2xl shadow-2xl border border-slate-200/80 dark:border-white/10 w-[95vw] sm:w-[380px] max-h-[420px] flex flex-col overflow-hidden animate-slideUp"
+          className="absolute bottom-14 left-2 sm:left-12 z-50 bg-white dark:bg-[#202c33] rounded-2xl shadow-2xl border border-slate-200/80 dark:border-white/10 w-[95vw] sm:w-[360px] max-h-[380px] flex flex-col overflow-hidden animate-slideUp"
         >
-          {/* Header Switcher: Emojis | GIFs | Stickers */}
           <div className="flex items-center border-b border-slate-200 dark:border-white/10 bg-[#f0f2f5] dark:bg-[#182229] px-2 py-1.5 flex-shrink-0">
             {[
               { id: 'emojis', label: 'Emojis' },
@@ -439,9 +487,9 @@ export default function Composer({
                 key={tab.id}
                 type="button"
                 onClick={() => setActiveEmojiTab(tab.id)}
-                className={`flex-1 py-1.5 text-[13px] font-semibold rounded-lg transition-colors cursor-pointer text-center ${
+                className={`flex-1 py-1 text-[12.5px] font-semibold rounded-lg transition-colors cursor-pointer text-center ${
                   activeEmojiTab === tab.id
-                    ? 'bg-white dark:bg-[#202c33] text-[#0044ff] dark:text-[#0055ff] shadow-xs'
+                    ? 'bg-white dark:bg-[#202c33] text-[#00a884] dark:text-[#25d366] shadow-xs'
                     : 'text-[#667781] dark:text-[#8696a0] hover:text-[#111b21] dark:hover:text-white'
                 }`}
               >
@@ -450,302 +498,258 @@ export default function Composer({
             ))}
           </div>
 
-          {/* Tab 1: Emoji Picker (emoji-picker-react) */}
           {activeEmojiTab === 'emojis' && (
             <div className="flex-1 overflow-hidden">
               <EmojiPicker
                 onEmojiClick={(emojiData) => setText((prev) => prev + emojiData.emoji)}
                 autoFocusSearch={false}
                 width="100%"
-                height={350}
+                height={320}
                 theme="auto"
               />
             </div>
           )}
 
-          {/* Tab 2: Reaction GIFs Grid */}
           {activeEmojiTab === 'gifs' && (
-            <div className="p-3 overflow-y-auto max-h-[350px] space-y-2">
-              <span className="text-[11px] font-bold uppercase tracking-wider text-[#8696a0] px-1">
-                Trending Reaction GIFs
-              </span>
+            <div className="p-2.5 overflow-y-auto max-h-[320px] space-y-2">
               <div className="grid grid-cols-2 gap-2">
                 {POPULAR_GIFS.map((gif) => (
                   <button
                     key={gif.id}
                     type="button"
-                    onClick={() => handleSendGif(gif)}
-                    className="group relative rounded-xl overflow-hidden aspect-video bg-black/10 hover:ring-2 hover:ring-[#0044ff] cursor-pointer transition-all"
+                    onClick={() => {
+                      onSendMessage({ text: '', image: gif.url, mediaType: 'image/gif' });
+                      setShowEmojiTray(false);
+                    }}
+                    className="group relative rounded-xl overflow-hidden aspect-video bg-black/10 hover:ring-2 hover:ring-[#00a884] cursor-pointer transition-all"
                   >
-                    <img
-                      src={gif.url}
-                      alt={gif.title}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform"
-                    />
-                    <div className="absolute inset-x-0 bottom-0 p-1 bg-black/60 text-white text-[10px] font-medium truncate">
-                      {gif.title}
-                    </div>
+                    <img src={gif.url} alt={gif.title} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
                   </button>
                 ))}
               </div>
             </div>
           )}
 
-          {/* Tab 3: Stickers + Custom Sticker Creator */}
           {activeEmojiTab === 'stickers' && (
-            <div className="p-3 overflow-y-auto max-h-[350px] space-y-3">
-              {/* Add / Create Sticker Action Button */}
-              <button
-                type="button"
-                onClick={() => stickerCreatorInputRef.current?.click()}
-                className="w-full py-2.5 px-3 rounded-xl border border-dashed border-[#0044ff] text-[#0044ff] dark:text-[#0055ff] hover:bg-[#0044ff]/5 text-[12.5px] font-bold flex items-center justify-center gap-2 cursor-pointer transition-colors"
-              >
-                <Plus className="w-4 h-4" />
-                <span>+ Add / Create Custom Sticker</span>
-              </button>
-
-              {/* Custom User Stickers */}
-              {customStickers.length > 0 && (
-                <div className="space-y-1.5">
-                  <span className="text-[11px] font-bold uppercase tracking-wider text-[#8696a0] px-1">
-                    Your Created Stickers ({customStickers.length})
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {customStickers.map((stk) => (
-                      <button
-                        key={stk.id}
-                        type="button"
-                        onClick={() => handleSendSticker(stk)}
-                        className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5 flex items-center justify-center group cursor-pointer transition-all aspect-square"
-                      >
-                        <img
-                          src={stk.url}
-                          alt={stk.label}
-                          className="w-full h-full object-contain group-hover:scale-110 transition-transform"
-                        />
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Built-in Sticker Pack */}
-              <div className="space-y-1.5">
-                <span className="text-[11px] font-bold uppercase tracking-wider text-[#8696a0] px-1">
-                  Nexo Pack
-                </span>
-                <div className="grid grid-cols-3 gap-2">
-                  {DEFAULT_STICKERS.map((stk) => (
-                    <button
-                      key={stk.id}
-                      type="button"
-                      onClick={() => handleSendSticker(stk)}
-                      className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5 flex flex-col items-center justify-center group cursor-pointer transition-all aspect-square"
-                    >
-                      <img
-                        src={stk.url}
-                        alt={stk.label}
-                        className="w-14 h-14 object-cover rounded-lg group-hover:scale-110 transition-transform"
-                      />
-                      <span className="text-[10px] text-[#667781] dark:text-[#8696a0] mt-1 font-medium">
-                        {stk.label}
-                      </span>
-                    </button>
-                  ))}
-                </div>
+            <div className="p-2.5 overflow-y-auto max-h-[320px] space-y-2">
+              <div className="grid grid-cols-3 gap-2">
+                {DEFAULT_STICKERS.map((stk) => (
+                  <button
+                    key={stk.id}
+                    type="button"
+                    onClick={() => {
+                      onSendMessage({ text: '', stickerUrl: stk.url, isSticker: true });
+                      setShowEmojiTray(false);
+                    }}
+                    className="p-1.5 rounded-xl hover:bg-black/5 dark:hover:bg-white/10 border border-slate-200/60 dark:border-white/5 flex flex-col items-center justify-center group cursor-pointer transition-all aspect-square"
+                  >
+                    <img src={stk.url} alt={stk.label} className="w-12 h-12 object-cover rounded-lg group-hover:scale-110 transition-transform" />
+                  </button>
+                ))}
               </div>
             </div>
           )}
         </div>
       )}
 
-      {/* ============================================================== */}
-      {/* 5. MAIN COMPOSER BAR (Paperclip + Emoji + Pill + Send)          */}
-      {/* ============================================================== */}
-      <div className="flex items-center gap-1.5 sm:gap-2">
-        {/* Multi-Option Paperclip Button (Item 5) */}
-        <button
-          type="button"
-          onClick={() => {
-            setShowAttachMenu(!showAttachMenu);
-            setShowEmojiTray(false);
-          }}
-          title="Attach"
-          className={`p-2.5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-            showAttachMenu
-              ? 'bg-[#0044ff] text-white shadow-md'
-              : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#0044ff] hover:bg-black/5 dark:hover:bg-white/10'
-          }`}
-        >
-          <Paperclip className="w-5 h-5" />
-        </button>
+      {/* 5. MAIN COMPOSER BAR & REAL RECORDING BAR */}
+      {isRecording ? (
+        /* Live Recording Interface */
+        <div className="flex items-center justify-between gap-3 bg-white dark:bg-[#202c33] rounded-full px-4 py-2 border border-rose-500/30 shadow-md animate-fadeIn">
+          <div className="flex items-center gap-2.5">
+            <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
+            <span className="text-[14px] font-mono font-bold text-rose-600 dark:text-rose-400">
+              {formatRecordingTime(recordingSeconds)}
+            </span>
+            <span className="text-[12.5px] text-[#8696a0] hidden sm:inline">
+              Recording live microphone audio...
+            </span>
+          </div>
 
-        {/* The Unified Pill Bar */}
-        <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-full px-2.5 sm:px-3 py-1 shadow-composer border border-black/5 dark:border-white/5 transition-all min-w-0">
-          {/* Emoji / GIF / Sticker Tray Toggle */}
+          <div className="flex items-center gap-2">
+            {/* Cancel Button */}
+            <button
+              type="button"
+              onClick={cancelRecording}
+              className="p-2 rounded-full text-[#8696a0] hover:text-rose-600 hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer transition-colors"
+              title="Cancel recording"
+            >
+              <Trash2 className="w-5 h-5" />
+            </button>
+
+            {/* Send Recording Button */}
+            <button
+              type="button"
+              onClick={stopAndSendRecording}
+              className="px-4 py-1.5 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white text-[13px] font-bold flex items-center gap-1.5 shadow-sm cursor-pointer transition-transform active:scale-95"
+              title="Stop and send audio message"
+            >
+              <Send className="w-4 h-4 ml-0.5" />
+              <span>Send</span>
+            </button>
+          </div>
+        </div>
+      ) : (
+        /* Normal Composer Bar */
+        <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Multi-Option Paperclip Button */}
           <button
-            id="emoji-toggle-btn"
             type="button"
             onClick={() => {
-              setShowEmojiTray(!showEmojiTray);
-              setShowAttachMenu(false);
+              setShowAttachMenu(!showAttachMenu);
+              setShowEmojiTray(false);
             }}
-            title="Emojis, GIFs & Stickers"
-            className={`p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-              showEmojiTray
-                ? 'text-[#0044ff] dark:text-[#0055ff]'
-                : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#0044ff]'
+            title="Attach"
+            className={`p-2 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+              showAttachMenu
+                ? 'bg-[#00a884] text-white shadow-xs'
+                : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884] hover:bg-black/5 dark:hover:bg-white/10'
             }`}
           >
-            <Smile className="w-5 h-5" />
+            <Paperclip className="w-5 h-5" />
           </button>
 
-          {/* Text Input */}
-          <input
-            type="text"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            placeholder={chat?.isSelfChat ? "Save a note, link, or code snippet..." : "Message..."}
-            className="flex-1 px-2.5 py-1.5 bg-transparent text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[15px] focus:outline-none font-sans min-w-0"
-          />
+          {/* Unified Input Pill Bar */}
+          <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-full px-2.5 sm:px-3 py-1 shadow-xs border border-black/5 dark:border-white/5 transition-all min-w-0">
+            {/* Emoji Toggle */}
+            <button
+              id="emoji-toggle-btn"
+              type="button"
+              onClick={() => {
+                setShowEmojiTray(!showEmojiTray);
+                setShowAttachMenu(false);
+              }}
+              title="Emojis, GIFs & Stickers"
+              className={`p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                showEmojiTray
+                  ? 'text-[#00a884] dark:text-[#25d366]'
+                  : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884]'
+              }`}
+            >
+              <Smile className="w-5 h-5" />
+            </button>
 
-          {/* AI Magic Wand (Tone Rewrite / Translate) */}
-          <button
-            type="button"
-            onClick={() => setShowToneModal(true)}
-            title="AI Tone Rewrite & Translate"
-            className="p-1.5 text-[#0044ff] dark:text-[#0055ff] hover:scale-110 transition-transform relative cursor-pointer flex-shrink-0"
-          >
-            <Wand2 className="w-5 h-5" />
-            <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-gradient-to-r from-[#0055ff] to-[#d946ef] animate-pulse" />
-          </button>
+            {/* Text Input */}
+            <input
+              type="text"
+              value={text}
+              onChange={(e) => setText(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={chat?.isSelfChat ? "Save a note, link, or code snippet..." : "Message..."}
+              className="flex-1 px-2.5 py-1.5 bg-transparent text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[15px] focus:outline-none font-sans min-w-0"
+            />
 
-          {/* Schedule Message (Clock Icon) */}
-          <button
-            type="button"
-            onClick={() => setShowScheduleModal(true)}
-            title="Schedule Message"
-            className="p-1.5 text-[#54656f] dark:text-[#8696a0] hover:text-[#0044ff] transition-colors rounded-full cursor-pointer flex-shrink-0"
-          >
-            <Clock className="w-5 h-5" />
-          </button>
+            {/* AI Magic Wand */}
+            <button
+              type="button"
+              onClick={() => setShowToneModal(true)}
+              title="AI Tone Rewrite & Translate"
+              className="p-1.5 text-[#00a884] dark:text-[#25d366] hover:scale-110 transition-transform relative cursor-pointer flex-shrink-0"
+            >
+              <Wand2 className="w-5 h-5" />
+              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+            </button>
+
+            {/* Schedule Message */}
+            <button
+              type="button"
+              onClick={() => setShowScheduleModal(true)}
+              title="Schedule Message"
+              className="p-1.5 text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884] transition-colors rounded-full cursor-pointer flex-shrink-0"
+            >
+              <Clock className="w-5 h-5" />
+            </button>
+          </div>
+
+          {/* Send Button or Real Mic Recording Trigger */}
+          {hasContent ? (
+            <button
+              type="button"
+              onClick={handleSend}
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-md shadow-[#00a884]/25 transition-all transform active:scale-95 cursor-pointer flex-shrink-0"
+              title="Send message"
+            >
+              <Send className="w-5 h-5 ml-0.5" />
+            </button>
+          ) : (
+            <button
+              type="button"
+              onClick={startRecording}
+              className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-md shadow-[#00a884]/25 transition-all transform active:scale-95 cursor-pointer flex-shrink-0"
+              title="Record voice note (Click to start recording)"
+            >
+              <Mic className="w-5 h-5" />
+            </button>
+          )}
         </div>
+      )}
 
-        {/* Send Button or Voice Note Mic */}
-        {hasContent ? (
-          <button
-            type="button"
-            onClick={handleSend}
-            className="w-11 h-11 rounded-full bg-[#0044ff] hover:bg-[#0038d1] text-white flex items-center justify-center shadow-md shadow-[#0044ff]/25 transition-all transform active:scale-95 cursor-pointer flex-shrink-0"
-            title="Send"
-          >
-            <Send className="w-5 h-5 ml-0.5" />
-          </button>
-        ) : (
-          <button
-            type="button"
-            onClick={() => {
-              onSendMessage('🎙️ Voice message (0:12)');
-            }}
-            className="w-11 h-11 rounded-full bg-white dark:bg-[#2a3942] text-[#54656f] dark:text-[#8696a0] hover:text-[#0044ff] flex items-center justify-center shadow-composer transition-all cursor-pointer flex-shrink-0"
-            title="Send Voice Note"
-          >
-            <Mic className="w-5 h-5" />
-          </button>
-        )}
-      </div>
-
-      {/* ============================================================== */}
-      {/* 6. MODALS                                                      */}
-      {/* ============================================================== */}
-      
-      {/* AI Tone Modal */}
+      {/* Sub-modals */}
       {showToneModal && (
         <AiToneModal
           initialText={text}
-          onApply={(rewritten) => {
-            setText(rewritten);
-            setShowToneModal(false);
-          }}
+          onApply={(rewritten) => setText(rewritten)}
           onClose={() => setShowToneModal(false)}
         />
       )}
 
-      {/* Schedule Modal (Preserves attached media payload) */}
       {showScheduleModal && (
         <ScheduleModal
-          messageText={text}
-          imagePreview={imagePreview}
-          mediaAttachment={pendingAttachment}
-          onSchedule={(schedData) => {
-            if (onScheduleMessage) {
-              const isObj = typeof schedData === 'object' && schedData !== null;
-              onScheduleMessage({
-                text: text.trim() || (imagePreview ? 'Photo' : 'Scheduled Reminder'),
-                image: imagePreview || null,
-                mediaUrl: imagePreview || pendingAttachment?.fileUrl || null,
-                mediaType: pendingAttachment?.type || (imagePreview ? 'image' : null),
-                fileName: pendingAttachment?.fileName || null,
-                fileSize: pendingAttachment?.fileSize || null,
-                scheduledFor: isObj ? schedData.scheduledFor : schedData,
-                scheduledAt: isObj ? schedData.scheduledAt : Date.now() + 60000,
-                recipientName: chat?.name
-              });
-            }
-            setShowScheduleModal(false);
+          chat={chat}
+          pendingText={text}
+          pendingImage={imagePreview}
+          onSchedule={(data) => {
+            if (onScheduleMessage) onScheduleMessage(data);
             setText('');
             setImagePreview(null);
-            setPendingAttachment(null);
           }}
           onClose={() => setShowScheduleModal(false)}
         />
       )}
 
-      {/* Camera Capture Modal */}
-      <CameraCaptureModal
-        isOpen={showCameraModal}
-        onClose={() => setShowCameraModal(false)}
-        onCapture={(dataUrl) => {
-          setImagePreview(dataUrl);
-        }}
-      />
+      {showCameraModal && (
+        <CameraCaptureModal
+          isOpen={showCameraModal}
+          onClose={() => setShowCameraModal(false)}
+          onCapture={(capturedUrl) => {
+            setImagePreview(capturedUrl);
+            setShowCameraModal(false);
+          }}
+        />
+      )}
 
-      {/* Create Poll Modal */}
-      <CreatePollModal
-        isOpen={showPollModal}
-        onClose={() => setShowPollModal(false)}
-        onSubmit={(pollData) => {
-          onSendMessage({
-            text: `📊 Poll: ${pollData.question}`,
-            poll: pollData
-          });
-        }}
-      />
+      {showPollModal && (
+        <CreatePollModal
+          isOpen={showPollModal}
+          onClose={() => setShowPollModal(false)}
+          onCreatePoll={(pollData) => {
+            onSendMessage({ text: '', poll: pollData });
+            setShowPollModal(false);
+          }}
+        />
+      )}
 
-      {/* Create Event Modal */}
-      <CreateEventModal
-        isOpen={showEventModal}
-        onClose={() => setShowEventModal(false)}
-        onSubmit={(eventData) => {
-          onSendMessage({
-            text: `📅 Event: ${eventData.title}`,
-            event: eventData
-          });
-        }}
-      />
+      {showEventModal && (
+        <CreateEventModal
+          isOpen={showEventModal}
+          onClose={() => setShowEventModal(false)}
+          onCreateEvent={(eventData) => {
+            onSendMessage({ text: '', event: eventData });
+            setShowEventModal(false);
+          }}
+        />
+      )}
 
-      {/* Share Contact Modal */}
-      <ShareContactModal
-        isOpen={showContactModal}
-        onClose={() => setShowContactModal(false)}
-        onSubmit={(contactData) => {
-          onSendMessage({
-            text: `👤 Contact: ${contactData.name}`,
-            contactCard: contactData
-          });
-        }}
-      />
+      {showContactModal && (
+        <ShareContactModal
+          isOpen={showContactModal}
+          onClose={() => setShowContactModal(false)}
+          onShareContact={(contactCard) => {
+            onSendMessage({ text: '', contactCard });
+            setShowContactModal(false);
+          }}
+        />
+      )}
     </div>
   );
 }

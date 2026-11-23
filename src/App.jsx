@@ -18,8 +18,9 @@ import CommunitiesView from './components/CommunitiesView';
 import CallsView from './components/CallsView';
 import SyncLoadingScreen from './components/SyncLoadingScreen';
 import AppLockScreen from './components/AppLockScreen';
-import { Plus, CheckCircle2, X } from 'lucide-react';
-import { INITIAL_ARCHIVED, INITIAL_FOLDERS, createSelfChat } from './mockData';
+import AvatarIcon from './components/AvatarIcon';
+import { Plus, CheckCircle2, X, Phone, PhoneOff, Video, Laptop } from 'lucide-react';
+import { INITIAL_ARCHIVED, INITIAL_FOLDERS, createSelfChat, createDemoChats } from './mockData';
 import { requestAI } from './lib/aiClient';
 import { supabase } from './lib/supabase';
 
@@ -44,6 +45,7 @@ export default function App() {
   const [isConnectedDevicesOpen, setIsConnectedDevicesOpen] = useState(false);
   const [deletePrompt, setDeletePrompt] = useState(null); // { msg, chatId }
   const [activeCall, setActiveCall] = useState(null); // { contact, type: 'voice' | 'video' }
+  const [incomingCall, setIncomingCall] = useState(null); // { callId, caller, type, offer }
   const [showSummarizeModal, setShowSummarizeModal] = useState(false);
 
   // 4. Chat State
@@ -58,12 +60,18 @@ export default function App() {
   const [appToast, setAppToast] = useState('');
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [pairSuccessBanner, setPairSuccessBanner] = useState(false);
+  const [linkDevicePrompt, setLinkDevicePrompt] = useState(null); // token string
 
   // References for realtime callbacks
   const userRef = useRef(user);
   const activeChatIdRef = useRef(activeChatId);
   const chatsRef = useRef(chats);
   const realtimeChannelRef = useRef(null);
+  const incomingCallRef = useRef(incomingCall);
+
+  useEffect(() => {
+    incomingCallRef.current = incomingCall;
+  }, [incomingCall]);
 
   useEffect(() => {
     userRef.current = user;
@@ -82,47 +90,113 @@ export default function App() {
     setTimeout(() => setAppToast(''), 3500);
   };
 
-  // Detect mobile QR code pairing scan (?pair_session=...)
+  // Detect mobile QR code pairing scan (?link_token=... or ?pair_session=...)
   useEffect(() => {
     if (typeof window === 'undefined') return;
     const params = new URLSearchParams(window.location.search);
-    const pairSession = params.get('pair_session');
-    if (pairSession) {
-      const ua = navigator.userAgent;
-      const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
-      const devName = isMobile
-        ? (/Android/i.test(ua) ? 'Android (Mobile Browser)' : 'iOS Safari (Mobile)')
-        : 'Mobile Browser Session';
+    const token = params.get('link_token') || params.get('pair_session');
 
-      const newDevice = {
-        id: `dev_${Date.now()}`,
-        os: `${devName}`,
-        isCurrent: false,
-        status: 'Active now',
-        location: 'Linked via QR Scan',
-        isMobile: true,
-        lastActive: 'Just now'
-      };
-
-      try {
-        const existing = JSON.parse(localStorage.getItem('nexo_linked_devices') || '[]');
-        const updated = [newDevice, ...existing.filter((d) => d.id !== newDevice.id)];
-        localStorage.setItem('nexo_linked_devices', JSON.stringify(updated));
-        localStorage.setItem('nexo_pair_event', JSON.stringify({ type: 'PAIR_SUCCESS', sessionId: pairSession, timestamp: Date.now() }));
-      } catch {}
-
-      try {
-        if (typeof BroadcastChannel !== 'undefined') {
-          const channel = new BroadcastChannel('nexo_pair_channel');
-          channel.postMessage({ type: 'PAIR_SUCCESS', sessionId: pairSession });
-          setTimeout(() => channel.close(), 1000);
-        }
-      } catch {}
-
-      setPairSuccessBanner(true);
-      window.history.replaceState({}, document.title, window.location.pathname);
+    if (token) {
+      if (userRef.current) {
+        setLinkDevicePrompt(token);
+      } else {
+        try {
+          sessionStorage.setItem('nexo_pending_link_token', token);
+        } catch {}
+      }
     }
   }, []);
+
+  // Confirm linking to desktop session when prompt is confirmed on mobile
+  const handleConfirmLinkDevice = async (token) => {
+    if (!token || !user) return;
+    const ua = navigator.userAgent;
+    const isMobile = /Android|iPhone|iPad|iPod/i.test(ua);
+    const devName = isMobile
+      ? (/Android/i.test(ua) ? 'Android (Mobile Browser)' : 'iOS Safari (Mobile)')
+      : 'Mobile Web Session';
+
+    const devInfo = {
+      ua,
+      os: devName,
+      linked_at: new Date().toISOString()
+    };
+
+    // 1. Update Supabase linked_devices table
+    try {
+      await supabase
+        .from('linked_devices')
+        .update({
+          status: 'linked',
+          user_id: user.id,
+          phone: user.phone || '',
+          username: user.username || '',
+          display_name: user.name || user.full_name || '',
+          device_info: devInfo
+        })
+        .eq('link_token', token);
+    } catch (err) {
+      console.warn('linked_devices update error:', err);
+    }
+
+    // 2. Broadcast to Realtime channels
+    try {
+      const qrChan = supabase.channel(`qr-login-${token}`);
+      qrChan.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          qrChan.send({
+            type: 'broadcast',
+            event: 'device-linked',
+            payload: { user, deviceInfo: devInfo }
+          });
+        }
+      });
+    } catch {}
+
+    try {
+      const legChan = supabase.channel(`device-link-${token}`);
+      legChan.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          legChan.send({
+            type: 'broadcast',
+            event: 'device-linked',
+            payload: { user, deviceInfo: devInfo }
+          });
+        }
+      });
+    } catch {}
+
+    // 3. Local device entry
+    const newDevice = {
+      id: `dev_${Date.now()}`,
+      os: 'Desktop Browser (Linked)',
+      isCurrent: false,
+      status: 'Active now',
+      location: 'Linked via QR Scan',
+      isMobile: false,
+      lastActive: 'Just now'
+    };
+
+    try {
+      const existing = JSON.parse(localStorage.getItem('nexo_linked_devices') || '[]');
+      const updated = [newDevice, ...existing.filter((d) => d.id !== newDevice.id)];
+      localStorage.setItem('nexo_linked_devices', JSON.stringify(updated));
+      localStorage.setItem('nexo_pair_event', JSON.stringify({ type: 'PAIR_SUCCESS', sessionId: token, timestamp: Date.now() }));
+    } catch {}
+
+    try {
+      if (typeof BroadcastChannel !== 'undefined') {
+        const channel = new BroadcastChannel('nexo_pair_channel');
+        channel.postMessage({ type: 'PAIR_SUCCESS', sessionId: token });
+        setTimeout(() => channel.close(), 1000);
+      }
+    } catch {}
+
+    setLinkDevicePrompt(null);
+    setPairSuccessBanner(true);
+    window.history.replaceState({}, document.title, window.location.pathname);
+    showToast('Device linked! You can now return to your computer.');
+  };
 
   // Global Scheduled Messages Auto-Send Engine (Runs every 1000ms / 1 second)
   useEffect(() => {
@@ -274,7 +348,7 @@ export default function App() {
           const displayName = contactProfile?.full_name || 'Nexo Contact';
           const displayHandle = contactProfile?.username || `@user_${otherId.slice(0, 5)}`;
           const avatar =
-            contactProfile?.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150';
+            contactProfile?.avatar_url || null;
           const bio = contactProfile?.mood || 'Available ✨';
 
           const existing = existingMap.get(otherId);
@@ -384,7 +458,7 @@ export default function App() {
           recipientId: contactId,
           name: record.sender_name || 'Nexo Contact',
           handle: record.sender_username || `@user_${contactId.slice(0, 5)}`,
-          avatar: record.sender_avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+          avatar: record.sender_avatar || null,
           bio: 'Active on Nexo ✨',
           folder: 'all',
           online: true,
@@ -507,6 +581,21 @@ export default function App() {
           })
         );
       })
+      .on('broadcast', { event: 'call-offer' }, ({ payload }) => {
+        if (payload?.recipientId === userRef.current?.id && payload?.caller?.id !== userRef.current?.id) {
+          setIncomingCall(payload);
+        }
+      })
+      .on('broadcast', { event: 'call-ended' }, ({ payload }) => {
+        if (payload?.callId === incomingCallRef.current?.callId) {
+          setIncomingCall(null);
+        }
+      })
+      .on('broadcast', { event: 'call-declined' }, ({ payload }) => {
+        if (payload?.callId === incomingCallRef.current?.callId) {
+          setIncomingCall(null);
+        }
+      })
       .subscribe((status) => {
         console.log('Realtime subscription status:', status);
       });
@@ -523,10 +612,25 @@ export default function App() {
   const handleLogin = (userData) => {
     setUser(userData);
     setIsSyncingChats(true);
-    const selfChat = createSelfChat(userData);
-    setChats([selfChat]);
-    setActiveChatId(selfChat.id);
-    loadSupabaseMessages(userData);
+    if (userData.isDemo) {
+      const demoChats = createDemoChats(userData);
+      setChats(demoChats);
+      setActiveChatId(demoChats[0].id);
+    } else {
+      const selfChat = createSelfChat(userData);
+      setChats([selfChat]);
+      setActiveChatId(selfChat.id);
+      loadSupabaseMessages(userData);
+    }
+
+    // If a mobile user opened a QR link before logging in, trigger the link confirmation prompt
+    try {
+      const pendingToken = sessionStorage.getItem('nexo_pending_link_token');
+      if (pendingToken) {
+        sessionStorage.removeItem('nexo_pending_link_token');
+        setLinkDevicePrompt(pendingToken);
+      }
+    } catch {}
   };
 
   // Selected chat
@@ -568,9 +672,11 @@ export default function App() {
           c.messages.some((m) => m.text.toLowerCase().includes(q));
 
         if (!matchesSearch) return false;
-        if (activeFolder === 'all') return true;
-        if (activeFolder === 'unread') return c.unreadCount > 0;
-        if (activeFolder === 'groups') return Boolean(c.isGroup);
+        if (activeFolder === 'all') return c.status !== 'pending';
+        if (activeFolder === 'unread') return c.unreadCount > 0 && c.status !== 'pending';
+        if (activeFolder === 'requests') return c.status === 'pending';
+        if (activeFolder === 'favourites') return Boolean(c.pinned) && c.status !== 'pending';
+        if (activeFolder === 'groups') return Boolean(c.isGroup) && c.status !== 'pending';
         return c.folder === activeFolder;
       })
       .sort((a, b) => {
@@ -579,6 +685,47 @@ export default function App() {
         return (b.pinned ? 1 : 0) - (a.pinned ? 1 : 0);
       });
   }, [chats, searchQuery, activeFolder]);
+
+  // Request actions: Accept and Decline
+  const handleAcceptRequest = (chatId) => {
+    setChats((prev) =>
+      prev.map((c) => (c.id === chatId ? { ...c, status: 'accepted' } : c))
+    );
+    showToast('Chat request accepted!');
+  };
+
+  const handleDeclineRequest = (chatId) => {
+    setChats((prev) => prev.filter((c) => c.id !== chatId));
+    if (activeChatId === chatId) setActiveChatId('self_vault');
+    showToast('Chat request declined.');
+  };
+
+  // Incoming Call actions: Accept and Decline
+  const handleAcceptIncomingCall = () => {
+    if (!incomingCall) return;
+    setActiveCall({
+      id: incomingCall.callId,
+      caller: incomingCall.caller,
+      recipient: user,
+      type: incomingCall.type,
+      isIncoming: true,
+      offer: incomingCall.offer
+    });
+    setIncomingCall(null);
+  };
+
+  const handleDeclineIncomingCall = () => {
+    if (!incomingCall) return;
+    try {
+      const callChannel = supabase.channel(`call-signaling-${incomingCall.callId}`);
+      callChannel.send({
+        type: 'broadcast',
+        event: 'call-declined',
+        payload: { callId: incomingCall.callId }
+      });
+    } catch {}
+    setIncomingCall(null);
+  };
 
   // Start new chat with contact or group
   const handleStartChatWith = (contactData) => {
@@ -599,20 +746,30 @@ export default function App() {
     }
 
     const chatId = targetRecipientId || contactData.id || `c_${Date.now()}`;
+    const status = contactData.isRequest ? 'pending' : (contactData.status || 'accepted');
+
     const newChatObj = {
       id: chatId,
       recipientId: targetRecipientId || null,
       name: contactData.name,
       handle: contactData.handle || `@${contactData.name.toLowerCase().replace(/\s+/g, '_')}`,
-      avatar: contactData.avatar || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
       bio: contactData.bio || 'Nexo contact',
       folder: 'all',
+      status,
       isGroup: Boolean(contactData.isGroup),
       online: true,
       typing: false,
       unreadCount: 0,
       lastSeen: 'Active now',
-      messages: []
+      messages: contactData.initialMessage ? [
+        {
+          id: `m_${Date.now()}`,
+          isSender: true,
+          text: contactData.initialMessage,
+          time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase(),
+          read: false,
+        }
+      ] : []
     };
 
     setChats((prevChats) => [prevChats[0] || createSelfChat(user), newChatObj, ...prevChats.slice(1)]);
@@ -1031,7 +1188,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen w-screen overflow-hidden bg-[#f0f2f5] dark:bg-[#0c1317] text-[#111b21] dark:text-[#e9edef] font-sans">
+    <div className="flex h-[100dvh] w-screen overflow-x-hidden overflow-y-hidden bg-[#f0f2f5] dark:bg-[#0c1317] text-[#111b21] dark:text-[#e9edef] font-sans pb-[env(safe-area-inset-bottom)]">
       {/* 1. Laptop / Desktop Far-Left Navigation Rail (>= 768px) */}
       <div className="hidden md:flex h-full flex-shrink-0">
         <NavigationRail
@@ -1081,7 +1238,6 @@ export default function App() {
             handleStartChatWith({
               name: groupName,
               handle: `@${groupName.toLowerCase().replace(/[^a-z0-9]/g, '_')}`,
-              avatar: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=150',
               bio: 'Community discussion channel',
               isGroup: true
             });
@@ -1125,17 +1281,19 @@ export default function App() {
               onOpenSettings={() => setIsSettingsOpen(true)}
               onNewCommunity={() => setActiveNavTab('communities')}
               onReadAll={handleReadAll}
+              onAcceptRequest={handleAcceptRequest}
+              onDeclineRequest={handleDeclineRequest}
             />
           </div>
 
-          {/* Floating Action Button (+ Send message) on Mobile */}
+          {/* Floating Action Button (Bright WhatsApp-green rounded square +) on Mobile at bottom: 76px; right: 16px */}
           {!activeChatId && (
             <button
               onClick={() => setIsNewChatOpen(true)}
-              className="md:hidden fixed bottom-20 right-5 z-40 px-4 py-3 rounded-full bg-[#25d366] hover:bg-[#20ba5a] text-[#111b21] font-bold text-[13.5px] shadow-lg flex items-center gap-1.5 cursor-pointer active:scale-95 transition-transform"
+              title="New chat by @username or phone"
+              className="md:hidden fixed bottom-[76px] right-4 z-40 w-13 h-13 rounded-2xl bg-[#25d366] hover:bg-[#20ba5a] text-[#111b21] shadow-lg flex items-center justify-center cursor-pointer active:scale-95 transition-all"
             >
-              <Plus className="w-5 h-5 stroke-[2.5]" />
-              <span>Send message</span>
+              <Plus className="w-6 h-6 stroke-[2.5]" />
             </button>
           )}
 
@@ -1230,10 +1388,54 @@ export default function App() {
         onDeleteForMe={handleDeleteForMe}
       />
 
+      {/* Incoming Call Notification Popover */}
+      {incomingCall && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm bg-white dark:bg-[#111b21] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col items-center text-center">
+            <div className="relative mb-4">
+              <AvatarIcon
+                size="xl"
+                name={incomingCall.caller?.name || 'Nexo Contact'}
+              />
+              <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#00a884] rounded-full ring-2 ring-white dark:ring-[#111b21] animate-ping" />
+            </div>
+
+            <h3 className="text-[19px] font-bold text-[#111b21] dark:text-white">
+              {incomingCall.caller?.name || 'Nexo User'}
+            </h3>
+            <p className="text-[13px] text-[#00a884] font-semibold mt-0.5">
+              {incomingCall.caller?.username || '@contact'}
+            </p>
+            <p className="text-[13.5px] text-[#667781] dark:text-[#8696a0] mt-2 font-medium">
+              Incoming Nexo {incomingCall.type === 'video' ? 'Video' : 'Voice'} Call...
+            </p>
+
+            <div className="flex items-center gap-6 mt-6">
+              <button
+                onClick={handleDeclineIncomingCall}
+                className="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg cursor-pointer active:scale-95 transition-transform"
+                title="Decline"
+              >
+                <PhoneOff className="w-6 h-6" />
+              </button>
+
+              <button
+                onClick={handleAcceptIncomingCall}
+                className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-lg cursor-pointer active:scale-95 transition-transform"
+                title="Accept"
+              >
+                {incomingCall.type === 'video' ? <Video className="w-6 h-6" /> : <Phone className="w-6 h-6" />}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* In-App Call Overlay Modal */}
       {activeCall && (
         <CallModal
           call={activeCall}
+          currentUser={user}
           onEndCall={() => setActiveCall(null)}
         />
       )}
@@ -1244,6 +1446,42 @@ export default function App() {
           chat={activeChat}
           onClose={() => setShowSummarizeModal(false)}
         />
+      )}
+
+      {/* Mobile QR Confirmation Prompt Modal */}
+      {linkDevicePrompt && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <div className="w-full max-w-sm bg-white dark:bg-[#111b21] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col items-center text-center">
+            <div className="w-14 h-14 rounded-2xl bg-[#00a884]/15 text-[#00a884] flex items-center justify-center mb-3">
+              <Laptop className="w-7 h-7" />
+            </div>
+            <h3 className="text-[18px] font-bold text-[#111b21] dark:text-white">
+              Link a Device
+            </h3>
+            <p className="text-[13px] text-[#667781] dark:text-[#8696a0] mt-1.5 leading-relaxed">
+              A desktop browser is requesting to link to your Nexo account (<span className="text-[#00a884] font-semibold">{user?.username || user?.name}</span>).
+            </p>
+
+            <div className="flex items-center gap-3 w-full mt-6">
+              <button
+                onClick={() => {
+                  setLinkDevicePrompt(null);
+                  window.history.replaceState({}, document.title, window.location.pathname);
+                  showToast('Device linking cancelled.');
+                }}
+                className="flex-1 py-2.5 rounded-xl border border-slate-300 dark:border-white/15 text-[13.5px] font-semibold text-[#54656f] dark:text-[#aebac1] hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={() => handleConfirmLinkDevice(linkDevicePrompt)}
+                className="flex-1 py-2.5 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white text-[13.5px] font-bold shadow-md shadow-[#00a884]/20 cursor-pointer active:scale-95 transition-transform"
+              >
+                Confirm Linking
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Device Linked Confirmation Banner */}

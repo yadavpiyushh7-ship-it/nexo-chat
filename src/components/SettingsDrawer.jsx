@@ -39,6 +39,7 @@ import {
   User
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
+import AvatarIcon from './AvatarIcon';
 import { supabase } from '../lib/supabase';
 
 export default function SettingsDrawer({
@@ -60,7 +61,7 @@ export default function SettingsDrawer({
   const [editName, setEditName] = useState(user?.name || 'Alex Morgan');
   const [editUsername, setEditUsername] = useState(user?.username || '@alex_m');
   const [editMood, setEditMood] = useState(mood);
-  const [editAvatar, setEditAvatar] = useState(user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=160');
+  const [editAvatar, setEditAvatar] = useState(user?.avatar || null);
   const [profileSuccessToast, setProfileSuccessToast] = useState('');
   const profileFileInputRef = useRef(null);
 
@@ -69,7 +70,7 @@ export default function SettingsDrawer({
     if (user) {
       setEditName(user.name || 'Alex Morgan');
       setEditUsername(user.username || '@alex_m');
-      setEditAvatar(user.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=160');
+      setEditAvatar(user.avatar || null);
       if (user.mood) setMood(user.mood);
     }
   }, [user]);
@@ -459,18 +460,14 @@ export default function SettingsDrawer({
             <div 
               onClick={() => setIsEditProfileOpen(true)}
               className="relative cursor-pointer group"
-              title="Click to edit profile photo"
+              title="Click to edit profile"
             >
-              <img
-                src={user?.avatar || editAvatar}
-                alt={user?.name || 'User'}
-                className="w-24 h-24 rounded-full object-cover ring-4 ring-white dark:ring-[#111b21] shadow-lg group-hover:opacity-90 transition-opacity"
+              <AvatarIcon
+                size="xl"
+                name={user?.name || editName}
+                showOnline
+                online
               />
-              <span className="absolute bottom-1 right-1 w-4 h-4 bg-[#25d366] rounded-full ring-2 ring-white dark:ring-[#111b21]" />
-              <div className="absolute inset-0 rounded-full bg-black/40 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center text-white transition-opacity">
-                <Camera className="w-5 h-5" />
-                <span className="text-[10px] font-bold mt-0.5 uppercase tracking-wider">Change</span>
-              </div>
             </div>
 
             <div 
@@ -573,11 +570,12 @@ export default function SettingsDrawer({
           {renderSubHeader('My QR Code', () => setCurrentView('main'))}
           <div className="flex-1 overflow-y-auto p-6 flex flex-col items-center justify-center text-center space-y-4">
             <div className="p-6 bg-white rounded-3xl shadow-xl border border-slate-200 dark:border-white/10 flex flex-col items-center max-w-xs">
-              <img
-                src={user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120'}
-                alt="Avatar"
-                className="w-16 h-16 rounded-full object-cover ring-2 ring-[#00a884] -mt-2 mb-2"
-              />
+              <div className="-mt-2 mb-2">
+                <AvatarIcon
+                  size="lg"
+                  name={user?.name || 'Alex Morgan'}
+                />
+              </div>
               <h4 className="text-[17px] font-bold text-[#111b21]">{user?.name || 'Alex Morgan'}</h4>
               <p className="text-[12.5px] text-[#00a884] font-semibold mb-4">{user?.username || '@alex_m'}</p>
 
@@ -1120,155 +1118,6 @@ export default function SettingsDrawer({
         </div>
       )}
 
-      {/* Hidden File Input for Profile Photo Upload */}
-      <input
-        type="file"
-        ref={profileFileInputRef}
-        accept="image/*"
-        onChange={handleProfilePhotoChange}
-        className="hidden"
-      />
-
-      {/* ============================================================== */}
-      {/* FULL EDIT PROFILE MODAL (Name, @username, Photo & Mood)         */}
-      {/* ============================================================== */}
-      {isEditProfileOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
-          <div className="w-full max-w-md bg-white dark:bg-[#111b21] rounded-2xl shadow-2xl border border-slate-200 dark:border-white/10 overflow-hidden flex flex-col max-h-[92vh]">
-            {/* Modal Header */}
-            <div className="px-5 py-4 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2 rounded-xl bg-[#00a884] text-white">
-                  <User className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-[17px] font-bold text-[#111b21] dark:text-white">
-                    Edit Profile
-                  </h3>
-                  <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">
-                    Customize your photo, handle and status
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsEditProfileOpen(false)}
-                className="p-1 rounded-full text-[#8696a0] hover:text-[#111b21] dark:hover:text-white cursor-pointer"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            {/* Modal Body */}
-            <form onSubmit={handleSaveProfile} className="p-5 sm:p-6 overflow-y-auto space-y-5">
-              {/* Profile Photo Uploader */}
-              <div className="flex flex-col items-center justify-center">
-                <div
-                  onClick={() => profileFileInputRef.current?.click()}
-                  className="relative group cursor-pointer"
-                  title="Click to choose a new photo"
-                >
-                  <img
-                    src={editAvatar}
-                    alt="Profile preview"
-                    className="w-24 h-24 rounded-full object-cover ring-4 ring-[#00a884]/30 shadow-md group-hover:opacity-85 transition-opacity"
-                  />
-                  <div className="absolute inset-0 rounded-full bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera className="w-6 h-6" />
-                    <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Change</span>
-                  </div>
-                  <div className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#00a884] text-white shadow-md ring-2 ring-white dark:ring-[#111b21]">
-                    <Upload className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => profileFileInputRef.current?.click()}
-                  className="mt-2 text-[12.5px] font-semibold text-[#00a884] dark:text-[#25d366] hover:underline cursor-pointer"
-                >
-                  Upload New Photo
-                </button>
-              </div>
-
-              {/* Display Name Input */}
-              <div>
-                <label className="block text-[12px] font-bold text-[#667781] dark:text-[#8696a0] uppercase tracking-wider mb-1">
-                  Display Name
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editName}
-                  onChange={(e) => setEditName(e.target.value)}
-                  placeholder="e.g. Alex Morgan"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-transparent focus:border-[#00a884] focus:bg-white dark:focus:bg-[#111b21] text-[14px] text-[#111b21] dark:text-white focus:outline-none transition-all"
-                />
-                <p className="text-[11.5px] text-[#8696a0] mt-1">
-                  This is the name visible to your contacts and inside your Self-Chat.
-                </p>
-              </div>
-
-              {/* Username Handle Input */}
-              <div>
-                <label className="block text-[12px] font-bold text-[#667781] dark:text-[#8696a0] uppercase tracking-wider mb-1">
-                  Username Handle
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={editUsername}
-                  onChange={(e) => setEditUsername(e.target.value)}
-                  placeholder="e.g. @alex_m"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-transparent focus:border-[#00a884] focus:bg-white dark:focus:bg-[#111b21] text-[14px] text-[#111b21] dark:text-white focus:outline-none transition-all"
-                />
-                <p className="text-[11.5px] text-[#8696a0] mt-1">
-                  Used by friends to search and find you on Nexo.
-                </p>
-              </div>
-
-              {/* Mood / Status Input */}
-              <div>
-                <label className="block text-[12px] font-bold text-[#667781] dark:text-[#8696a0] uppercase tracking-wider mb-1">
-                  About & Mood Status
-                </label>
-                <input
-                  type="text"
-                  value={editMood}
-                  onChange={(e) => setEditMood(e.target.value)}
-                  placeholder="e.g. Building Nexo Web ✨"
-                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-transparent focus:border-[#00a884] focus:bg-white dark:focus:bg-[#111b21] text-[14px] text-[#111b21] dark:text-white focus:outline-none transition-all"
-                />
-              </div>
-
-              {/* Action Buttons */}
-              <div className="pt-3 flex items-center justify-end gap-2.5 border-t border-slate-200/80 dark:border-white/10">
-                <button
-                  type="button"
-                  onClick={() => setIsEditProfileOpen(false)}
-                  className="px-4 py-2 rounded-xl text-[13px] font-medium text-[#667781] dark:text-[#aebac1] hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  className="px-5 py-2 rounded-xl bg-[#00a884] hover:bg-[#008f6f] active:bg-[#007a5f] text-white text-[13px] font-bold shadow-md shadow-[#00a884]/20 cursor-pointer transition-all"
-                >
-                  Save Changes
-                </button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
-
-      {/* Floating Success Toast */}
-      {profileSuccessToast && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 px-4 py-2.5 rounded-xl bg-emerald-600 text-white shadow-xl flex items-center gap-2 text-[13px] font-semibold animate-fadeIn">
-          <Check className="w-4 h-4 flex-shrink-0" />
-          <span>{profileSuccessToast}</span>
-        </div>
-      )}
-
       {/* ============================================================== */}
       {/* 5. CHATS SUB-PAGE                                              */}
       {/* ============================================================== */}
@@ -1760,33 +1609,15 @@ export default function SettingsDrawer({
 
             {/* Modal Body */}
             <form onSubmit={handleSaveProfile} className="p-5 sm:p-6 overflow-y-auto space-y-5">
-              {/* Profile Photo Uploader */}
+              {/* Silhouette Avatar Profile */}
               <div className="flex flex-col items-center justify-center">
-                <div
-                  onClick={() => profileFileInputRef.current?.click()}
-                  className="relative group cursor-pointer"
-                  title="Click to choose a new photo"
-                >
-                  <img
-                    src={editAvatar}
-                    alt="Profile preview"
-                    className="w-24 h-24 rounded-full object-cover ring-4 ring-[#00a884]/30 shadow-md group-hover:opacity-85 transition-opacity"
-                  />
-                  <div className="absolute inset-0 rounded-full bg-black/40 flex flex-col items-center justify-center text-white opacity-0 group-hover:opacity-100 transition-opacity">
-                    <Camera className="w-6 h-6" />
-                    <span className="text-[10px] font-bold mt-1 uppercase tracking-wider">Change</span>
-                  </div>
-                  <div className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[#00a884] text-white shadow-md ring-2 ring-white dark:ring-[#111b21]">
-                    <Upload className="w-3.5 h-3.5" />
-                  </div>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => profileFileInputRef.current?.click()}
-                  className="mt-2 text-[12.5px] font-semibold text-[#00a884] dark:text-[#25d366] hover:underline cursor-pointer"
-                >
-                  Upload New Photo
-                </button>
+                <AvatarIcon
+                  size="xl"
+                  name={editName || user?.name || 'Alex Morgan'}
+                />
+                <p className="mt-2 text-[12px] font-medium text-[#8696a0]">
+                  Monochrome Silhouette Profile
+                </p>
               </div>
 
               {/* Display Name Input */}

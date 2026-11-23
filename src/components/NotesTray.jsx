@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Plus, Music } from 'lucide-react';
+import AvatarIcon from './AvatarIcon';
 import { INITIAL_NOTES } from '../mockData';
 
 export default function NotesTray({ user }) {
@@ -40,23 +41,20 @@ export default function NotesTray({ user }) {
                 <div className="absolute left-1/2 -translate-x-1/2 -bottom-1 w-2 h-2 bg-white dark:bg-[#202c33] rotate-45 border-r border-b border-black/5 dark:border-white/10" />
               </div>
 
-              {/* Avatar with gradient border or online indicator */}
+              {/* Avatar (Monochrome Silhouette Icon) */}
               <div className="relative mt-1">
-                <div className="p-0.5 rounded-full bg-gradient-to-tr from-[#00C896] via-[#00A3FF] to-[#7928CA] group-hover:p-1 transition-all">
-                  <img
-                    src={isMe ? (user?.avatar || item.avatar) : item.avatar}
-                    alt={item.name}
-                    className="w-13 h-13 rounded-full object-cover border-2 border-white dark:border-[#111b21]"
-                  />
-                </div>
+                <AvatarIcon
+                  size="md"
+                  name={isMe ? (user?.name || 'You') : item.name}
+                  showOnline={!isMe && item.online}
+                  online={!isMe && item.online}
+                />
 
-                {isMe ? (
+                {isMe && (
                   <span className="absolute bottom-0 right-0 w-4 h-4 bg-[#00a884] text-white rounded-full flex items-center justify-center ring-2 ring-white dark:ring-[#111b21]">
                     <Plus className="w-2.5 h-2.5 stroke-[3]" />
                   </span>
-                ) : item.online ? (
-                  <span className="absolute bottom-0.5 right-0.5 w-3 h-3 bg-[#00a884] rounded-full ring-2 ring-white dark:ring-[#111b21]" />
-                ) : null}
+                )}
               </div>
 
               {/* Name */}

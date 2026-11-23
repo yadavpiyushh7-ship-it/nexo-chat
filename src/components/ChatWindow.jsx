@@ -27,6 +27,103 @@ import {
   Clock
 } from 'lucide-react';
 import Composer from './Composer';
+import AvatarIcon from './AvatarIcon';
+
+// Real Audio Player Bubble with interactive seek & live timing (No fake type labels)
+function AudioPlayerBubble({ src, duration }) {
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [totalDuration, setTotalDuration] = useState(duration || 0);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    const audio = audioRef.current;
+    if (!audio) return;
+
+    const onTimeUpdate = () => setCurrentTime(audio.currentTime);
+    const onLoadedMetadata = () => {
+      if (audio.duration && !isNaN(audio.duration) && audio.duration !== Infinity) {
+        setTotalDuration(audio.duration);
+      }
+    };
+    const onEnded = () => {
+      setIsPlaying(false);
+      setCurrentTime(0);
+    };
+
+    audio.addEventListener('timeupdate', onTimeUpdate);
+    audio.addEventListener('loadedmetadata', onLoadedMetadata);
+    audio.addEventListener('ended', onEnded);
+
+    return () => {
+      audio.removeEventListener('timeupdate', onTimeUpdate);
+      audio.removeEventListener('loadedmetadata', onLoadedMetadata);
+      audio.removeEventListener('ended', onEnded);
+    };
+  }, [src]);
+
+  const togglePlay = () => {
+    const audio = audioRef.current;
+    if (!audio) return;
+    if (isPlaying) {
+      audio.pause();
+      setIsPlaying(false);
+    } else {
+      audio.play().then(() => setIsPlaying(true)).catch(() => {});
+    }
+  };
+
+  const handleSeek = (e) => {
+    const audio = audioRef.current;
+    if (!audio || !totalDuration) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pos = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const newTime = pos * totalDuration;
+    audio.currentTime = newTime;
+    setCurrentTime(newTime);
+  };
+
+  const fmt = (s) => {
+    if (!s || isNaN(s) || s === Infinity) return '0:00';
+    const m = Math.floor(s / 60);
+    const sec = Math.floor(s % 60);
+    return `${m}:${sec < 10 ? '0' : ''}${sec}`;
+  };
+
+  return (
+    <div className="mb-2 p-2.5 rounded-xl bg-black/5 dark:bg-white/5 flex items-center gap-3 min-w-[210px] max-w-sm">
+      <audio ref={audioRef} src={src} preload="metadata" />
+      <button
+        type="button"
+        onClick={togglePlay}
+        className="w-9 h-9 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-xs flex-shrink-0 cursor-pointer transition-transform active:scale-95"
+      >
+        {isPlaying ? (
+          <span className="text-[12px] font-bold">❚❚</span>
+        ) : (
+          <Play className="w-4 h-4 ml-0.5 fill-current" />
+        )}
+      </button>
+
+      <div className="flex-1 space-y-1.5 min-w-0">
+        <div
+          onClick={handleSeek}
+          className="w-full h-1.5 bg-black/10 dark:bg-white/10 rounded-full cursor-pointer relative overflow-hidden"
+        >
+          <div
+            className="h-full bg-[#00a884] rounded-full transition-all"
+            style={{ width: `${totalDuration > 0 ? (currentTime / totalDuration) * 100 : 0}%` }}
+          />
+        </div>
+
+        <div className="flex justify-between items-center text-[10.5px] text-[#667781] dark:text-[#8696a0] font-mono">
+          <span>{fmt(currentTime)}</span>
+          <span>{fmt(totalDuration)}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 export default function ChatWindow({
   chat,
@@ -125,14 +222,13 @@ export default function ChatWindow({
             className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
           >
             <div className="relative flex-shrink-0">
-              <img
-                src={chat.avatar}
-                alt={chat.name}
-                className="w-10 h-10 rounded-full object-cover group-hover:ring-2 group-hover:ring-[#0044ff] transition-all"
+              <AvatarIcon
+                size="md"
+                isGroup={chat.isGroup}
+                name={chat.name}
+                showOnline={chat.online}
+                online={chat.online}
               />
-              {chat.online && (
-                <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-[#202c33]" />
-              )}
             </div>
 
             <div className="min-w-0">
@@ -346,26 +442,23 @@ export default function ChatWindow({
                         </div>
                       )}
 
-                      {/* Document Attachment Card */}
+                      {/* Document Attachment Card (No auto-generated type labels) */}
                       {(msg.attachment || msg.mediaType === 'document' || msg.fileName) && (
-                        <div className="mb-2 p-3 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 flex items-center justify-between gap-3 max-w-sm">
+                        <div className="mb-2 p-2.5 rounded-xl bg-black/5 dark:bg-white/5 border border-black/5 dark:border-white/10 flex items-center justify-between gap-3 max-w-sm">
                           <div className="flex items-center gap-2.5 min-w-0">
-                            <div className="w-10 h-10 rounded-xl bg-[#7f66ff] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
-                              <FileText className="w-5 h-5" />
+                            <div className="w-9 h-9 rounded-xl bg-[#7f66ff] text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                              <FileText className="w-4 h-4" />
                             </div>
                             <div className="min-w-0 text-left">
                               <span className="text-[13.5px] font-semibold text-[#111b21] dark:text-white block truncate">
-                                {msg.fileName || 'Document.pdf'}
-                              </span>
-                              <span className="text-[11.5px] text-[#667781] dark:text-[#8696a0]">
-                                {msg.fileSize || 'PDF Document'}
+                                {msg.fileName || 'Attachment'}
                               </span>
                             </div>
                           </div>
                           <a
-                            href={msg.attachment || '#'}
+                            href={msg.attachment || msg.mediaUrl || '#'}
                             download={msg.fileName || 'download'}
-                            className="p-2 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-[#0044ff] dark:text-[#0055ff] flex-shrink-0 cursor-pointer"
+                            className="p-1.5 rounded-full hover:bg-black/10 dark:hover:bg-white/10 text-[#00a884] dark:text-[#25d366] flex-shrink-0 cursor-pointer"
                             title="Download document"
                           >
                             <Download className="w-4 h-4" />
@@ -373,32 +466,12 @@ export default function ChatWindow({
                         </div>
                       )}
 
-                      {/* Audio / Voice Note Card */}
+                      {/* Real Audio / Voice Recording Player (No type labels) */}
                       {(msg.mediaType === 'audio' || (msg.text && msg.text.startsWith('🎙️'))) && (
-                        <div className="mb-2 p-2.5 rounded-xl bg-black/5 dark:bg-white/5 flex items-center gap-3 min-w-[200px]">
-                          <button
-                            type="button"
-                            className="w-9 h-9 rounded-full bg-[#ff8000] text-white flex items-center justify-center shadow-sm hover:opacity-90 flex-shrink-0 cursor-pointer"
-                          >
-                            <Play className="w-4 h-4 ml-0.5 fill-current" />
-                          </button>
-                          <div className="flex-1 space-y-1">
-                            {/* Animated waveform bars */}
-                            <div className="flex items-center gap-0.5 h-4">
-                              {[6, 12, 16, 8, 14, 10, 16, 6, 12, 14, 8, 16, 10, 6].map((h, i) => (
-                                <span
-                                  key={i}
-                                  className="w-1 bg-[#ff8000] rounded-full"
-                                  style={{ height: `${h}px` }}
-                                />
-                              ))}
-                            </div>
-                            <div className="flex justify-between text-[10.5px] text-[#8696a0]">
-                              <span>0:12</span>
-                              <span>{msg.fileName || 'Voice note'}</span>
-                            </div>
-                          </div>
-                        </div>
+                        <AudioPlayerBubble
+                          src={msg.mediaUrl || msg.attachment}
+                          duration={msg.duration}
+                        />
                       )}
 
                       {/* Contact Card */}

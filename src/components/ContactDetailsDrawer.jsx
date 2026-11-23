@@ -11,6 +11,7 @@ import {
   FileText,
   Lock
 } from 'lucide-react';
+import AvatarIcon from './AvatarIcon';
 
 export default function ContactDetailsDrawer({ contact, onClose, onClearChat, onDeleteChat }) {
   const [activeMediaTab, setActiveMediaTab] = useState('media');
@@ -35,17 +36,16 @@ export default function ContactDetailsDrawer({ contact, onClose, onClearChat, on
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto divide-y divide-[#d1d7db]/40 dark:divide-[#2a3942]/50">
-        {/* Profile Card */}
+        {/* Profile Card (Monochrome Silhouette Icon) */}
         <div className="p-6 flex flex-col items-center text-center">
           <div className="relative mb-3">
-            <img
-              src={contact.avatar}
-              alt={contact.name}
-              className="w-24 h-24 rounded-full object-cover ring-4 ring-[#00a884]/20 shadow-md"
+            <AvatarIcon
+              size="xl"
+              isGroup={contact.isGroup}
+              name={contact.name}
+              showOnline={contact.online}
+              online={contact.online}
             />
-            {contact.online && (
-              <span className="absolute bottom-1 right-1 w-4 h-4 bg-[#00a884] rounded-full ring-2 ring-white dark:ring-[#111b21]" />
-            )}
           </div>
           <h2 className="text-[19px] font-bold text-[#111b21] dark:text-white">
             {contact.name}
@@ -111,10 +111,9 @@ export default function ContactDetailsDrawer({ contact, onClose, onClearChat, on
           </div>
 
           {activeMediaTab === 'media' && (
-            <div className="grid grid-cols-3 gap-1.5 pt-1">
-              <img src="https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=100" className="w-full h-18 object-cover rounded-lg" alt="shared" />
-              <img src="https://images.unsplash.com/photo-1541701494587-cb58502866ab?w=100" className="w-full h-18 object-cover rounded-lg" alt="shared" />
-              <img src="https://images.unsplash.com/photo-1523050854058-8df90110c9f1?w=100" className="w-full h-18 object-cover rounded-lg" alt="shared" />
+            <div className="p-4 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-center text-[#8696a0] text-[12.5px]">
+              <ImageIcon className="w-6 h-6 mx-auto mb-1 text-[#00a884]" />
+              <span>No shared photos or videos yet</span>
             </div>
           )}
 

@@ -1,18 +1,22 @@
 import React, { useState, useEffect } from 'react';
-import { X, Search, AtSign, UserPlus, Sparkles, Loader2, Users } from 'lucide-react';
+import { X, Search, AtSign, UserPlus, Sparkles, Loader2, Send } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import AvatarIcon from './AvatarIcon';
+import { parseProfileInfo } from './AuthScreen';
 
 export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser }) {
   const [query, setQuery] = useState('');
+  const [firstMessage, setFirstMessage] = useState('');
   const [dbUsers, setDbUsers] = useState([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
+  const [selectedUser, setSelectedUser] = useState(null);
 
-  // Fallback preset suggestions
+  // Fallback initial directory
   const fallbackSuggestions = [
-    { name: 'Sarah Connor', handle: '@sarah_c', avatar: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=120', bio: 'Product Design & HCI' },
-    { name: 'Liam Patel', handle: '@liam_dev', avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120', bio: 'Full-stack & AI pipelines' },
-    { name: 'Elena Rostova', handle: '@elena_design', avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=120', bio: 'Visual Systems & UI' },
-    { name: 'CS Capstone Group', handle: '@capstone_2026', avatar: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=120', bio: 'Project team group chat', isGroup: true },
+    { name: 'Sarah Connor', handle: '@sarah_c', bio: 'Product Design & HCI' },
+    { name: 'Liam Patel', handle: '@liam_dev', bio: 'Full-stack & AI pipelines' },
+    { name: 'Elena Rostova', handle: '@elena_design', bio: 'Visual Systems & UI' },
+    { name: 'CS Capstone Group', handle: '@capstone_2026', bio: 'Project team group chat', isGroup: true },
   ];
 
   // Fetch real users from Supabase profiles
@@ -27,7 +31,7 @@ export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser
           .from('profiles')
           .select('*')
           .order('updated_at', { ascending: false })
-          .limit(30);
+          .limit(50);
 
         if (!error && data && isMounted) {
           const others = data.filter((p) => p.id !== currentUser?.id && p.username !== currentUser?.username);
@@ -48,50 +52,100 @@ export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser
 
   if (!isOpen) return null;
 
-  const handleCustomStart = (e) => {
+  const handleStart = (target) => {
+    const info = parseProfileInfo(target);
+    const displayName = info.name || target.full_name || target.name || 'Nexo Contact';
+    const handle = info.handle || target.username || target.handle || `@user_${(target.id || '').slice(0, 5)}`;
+    const bio = info.bio || target.mood || target.bio || 'Available ✨';
+
+    onStartChat({
+      id: target.id || `contact_${handle.replace('@', '')}`,
+      recipientId: target.id || null,
+      name: displayName,
+      handle: handle,
+      bio: bio,
+      phone: info.phone || target.phone || '',
+      email: info.email || target.email || '',
+      isGroup: Boolean(target.isGroup),
+      firstMessage: firstMessage.trim() || undefined,
+      isRequest: true
+    });
+
+    setQuery('');
+    setFirstMessage('');
+    setSelectedUser(null);
+    onClose();
+  };
+
+  const parsedDbUsers = dbUsers.map((u) => {
+    const info = parseProfileInfo(u);
+    return {
+      ...u,
+      id: u.id,
+      name: info.name,
+      handle: info.handle,
+      bio: info.bio,
+      phone: info.phone,
+      email: info.email,
+      isGroup: Boolean(u.isGroup)
+    };
+  });
+
+  const handleCustomSubmit = async (e) => {
     e.preventDefault();
     if (!query.trim()) return;
 
     const clean = query.trim();
     const handle = clean.startsWith('@') ? clean : `@${clean.toLowerCase().replace(/\s+/g, '_')}`;
-    const name = clean.replace(/^@/, '');
+    const cleanDigits = clean.replace(/\D/g, '');
 
-    // Check if matching db user exists
-    const match = dbUsers.find(
+    // 1. Check local parsed list
+    const match = parsedDbUsers.find(
       (u) =>
-        u.username?.toLowerCase() === handle.toLowerCase() ||
-        u.full_name?.toLowerCase() === clean.toLowerCase()
+        u.handle?.toLowerCase() === handle.toLowerCase() ||
+        u.name?.toLowerCase() === clean.toLowerCase() ||
+        (u.phone && (u.phone.includes(clean) || (cleanDigits.length >= 10 && u.phone.includes(cleanDigits.slice(-10))))) ||
+        (u.email && u.email.toLowerCase() === clean.toLowerCase())
     );
 
     if (match) {
-      onStartChat({
-        id: match.id,
-        recipientId: match.id,
-        name: match.full_name || name,
-        handle: match.username || handle,
-        avatar: match.avatar_url || 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        bio: match.mood || 'Nexo contact'
-      });
-    } else {
-      onStartChat({
-        name,
-        handle,
-        avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
-        bio: 'New Nexo contact'
-      });
+      handleStart(match);
+      return;
     }
 
-    setQuery('');
-    onClose();
+    // 2. Query Supabase directly
+    try {
+      const { data } = await supabase
+        .from('profiles')
+        .select('*')
+        .or(`username.ilike.%${clean}%,full_name.ilike.%${clean}%,mood.ilike.%${clean}%`)
+        .limit(1);
+
+      if (data && data.length > 0) {
+        handleStart(data[0]);
+        return;
+      }
+    } catch (err) {
+      console.warn('Direct search error:', err);
+    }
+
+    // 3. Fallback start
+    handleStart({
+      name: clean.replace(/^@/, ''),
+      handle,
+      bio: 'New Nexo contact'
+    });
   };
 
-  // Filter users by search query
   const q = query.toLowerCase().trim();
-  const filteredDbUsers = dbUsers.filter((u) => {
+  const cleanPhoneQ = q.replace(/\D/g, '');
+  const filteredDbUsers = parsedDbUsers.filter((u) => {
     if (!q) return true;
-    const matchUsername = (u.username || '').toLowerCase().includes(q.replace(/^@/, '')) || (u.username || '').toLowerCase().includes(q);
-    const matchName = (u.full_name || '').toLowerCase().includes(q);
-    return matchUsername || matchName;
+    const matchUsername = (u.handle || '').toLowerCase().includes(q.replace(/^@/, '')) || (u.handle || '').toLowerCase().includes(q);
+    const matchName = (u.name || '').toLowerCase().includes(q);
+    const matchPhone = (u.phone || '').includes(q) || (cleanPhoneQ.length >= 4 && (u.phone || '').includes(cleanPhoneQ));
+    const matchEmail = (u.email || '').toLowerCase().includes(q);
+    return matchUsername || matchName || matchPhone || matchEmail;
   });
 
   const displayList = filteredDbUsers.length > 0 ? filteredDbUsers : fallbackSuggestions.filter((item) => {
@@ -100,20 +154,20 @@ export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn font-sans">
-      <div className="w-full max-w-md bg-white dark:bg-[#202c33] rounded-2xl p-6 relative border border-slate-200 dark:border-white/10 shadow-2xl flex flex-col max-h-[85vh]">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn font-sans">
+      <div className="w-full max-w-md bg-white dark:bg-[#202c33] rounded-2xl p-5 sm:p-6 relative border border-slate-200 dark:border-white/10 shadow-2xl flex flex-col max-h-[85vh]">
         {/* Header */}
         <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-white/10 flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-[#00a884] text-white shadow-sm">
+            <div className="p-2 rounded-xl bg-[#00a884] text-white shadow-xs">
               <UserPlus className="w-5 h-5" />
             </div>
             <div>
               <h3 className="text-[17px] font-bold text-[#111b21] dark:text-white">
-                New Conversation
+                New Chat / Send Request
               </h3>
-              <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0]">
-                Search registered users by @username or name
+              <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">
+                Search users by @username, phone number, or email
               </p>
             </div>
           </div>
@@ -122,18 +176,15 @@ export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser
           </button>
         </div>
 
-        {/* Live Search Input Form */}
-        <form onSubmit={handleCustomStart} className="mt-4 flex-shrink-0">
-          <label className="block text-[12px] font-semibold text-[#667781] dark:text-[#8696a0] mb-1.5 uppercase tracking-wider">
-            Enter @username or Contact Name
-          </label>
+        {/* Search Input Form */}
+        <form onSubmit={handleCustomSubmit} className="mt-4 flex-shrink-0">
           <div className="relative">
             <AtSign className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#8696a0]" />
             <input
               type="text"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              placeholder="e.g. @sarah_c or Elena..."
+              placeholder="Search @username, phone, or email..."
               className="w-full pl-10 pr-24 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#111b21] border border-transparent focus:border-[#00a884] text-[#111b21] dark:text-white text-[14px] focus:outline-none transition-all"
               autoFocus
             />
@@ -147,11 +198,22 @@ export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser
           </div>
         </form>
 
+        {/* Optional First Message Input */}
+        <div className="mt-3 flex-shrink-0">
+          <input
+            type="text"
+            value={firstMessage}
+            onChange={(e) => setFirstMessage(e.target.value)}
+            placeholder="Add an optional greeting message or note..."
+            className="w-full px-3.5 py-2 rounded-xl bg-[#f0f2f5] dark:bg-[#111b21] border border-transparent focus:border-[#00a884] text-[#111b21] dark:text-white text-[13px] focus:outline-none transition-all"
+          />
+        </div>
+
         {/* Live User Search Results */}
-        <div className="mt-5 flex-1 overflow-y-auto">
+        <div className="mt-4 flex-1 overflow-y-auto space-y-1">
           <div className="flex items-center justify-between mb-2 px-1">
             <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#667781] dark:text-[#8696a0]">
-              {filteredDbUsers.length > 0 ? `Registered Users (${filteredDbUsers.length})` : 'Suggested Contacts'}
+              {filteredDbUsers.length > 0 ? `Registered Users (${filteredDbUsers.length})` : 'Directory Users'}
             </span>
             {loadingUsers && (
               <span className="flex items-center gap-1 text-[11px] text-[#00a884]">
@@ -161,35 +223,25 @@ export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser
             )}
           </div>
 
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {displayList.map((item) => {
               const displayName = item.full_name || item.name;
               const handle = item.username || item.handle;
-              const avatar = item.avatar_url || item.avatar;
               const statusText = item.mood || item.bio || 'Available ✨';
 
               return (
                 <div
                   key={item.id || handle}
-                  onClick={() => {
-                    onStartChat({
-                      id: item.id || `contact_${handle}`,
-                      recipientId: item.id || null,
-                      name: displayName,
-                      handle: handle,
-                      avatar: avatar,
-                      bio: statusText,
-                      isGroup: Boolean(item.isGroup)
-                    });
-                    onClose();
-                  }}
+                  onClick={() => handleStart(item)}
                   className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-[#f0f2f5] dark:hover:bg-[#111b21] cursor-pointer transition-colors group"
                 >
-                  <img
-                    src={avatar}
-                    alt={displayName}
-                    className="w-10 h-10 rounded-full object-cover ring-1 ring-black/5 dark:ring-white/10 group-hover:ring-[#00a884] transition-all"
+                  {/* Clean Monochrome Silhouette Avatar (Zero stock profile images) */}
+                  <AvatarIcon
+                    size="sm"
+                    isGroup={Boolean(item.isGroup)}
+                    name={displayName}
                   />
+
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center justify-between">
                       <h4 className="text-[14px] font-semibold text-[#111b21] dark:text-[#e9edef] truncate group-hover:text-[#00a884] transition-colors">
@@ -200,7 +252,7 @@ export default function NewChatModal({ isOpen, onClose, onStartChat, currentUser
                       </span>
                     </div>
                     <p className="text-[12px] text-[#667781] dark:text-[#8696a0] truncate">
-                      {statusText}
+                      {item.phone ? `${item.phone} • ${statusText}` : statusText}
                     </p>
                   </div>
                 </div>

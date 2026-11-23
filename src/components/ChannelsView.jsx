@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Megaphone, Plus, Check, ShieldCheck, Users, Search, Bell } from 'lucide-react';
+import AvatarIcon from './AvatarIcon';
 import { DEFAULT_CHANNELS } from '../mockData';
 
 export default function ChannelsView({ user }) {
@@ -25,7 +26,7 @@ export default function ChannelsView({ user }) {
       id: `ch_${Date.now()}`,
       name: newChannelName.trim(),
       handle: `@${newChannelName.trim().toLowerCase().replace(/\s+/g, '_')}`,
-      avatar: 'https://images.unsplash.com/photo-1557683316-973673baf926?w=150',
+      avatar: null,
       verified: true,
       followers: '1',
       description: newChannelDesc.trim() || 'New broadcast channel on Nexo.',
@@ -83,10 +84,10 @@ export default function ChannelsView({ user }) {
                     : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/50'
                 }`}
               >
-                <img
-                  src={ch.avatar}
-                  alt={ch.name}
-                  className="w-12 h-12 rounded-full object-cover flex-shrink-0"
+                <AvatarIcon
+                  isGroup
+                  size="md"
+                  name={ch.name}
                 />
 
                 <div className="flex-1 min-w-0">
@@ -134,10 +135,10 @@ export default function ChannelsView({ user }) {
             {/* Channel Banner */}
             <div className="h-[60px] px-6 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <img
-                  src={selectedChannel.avatar}
-                  alt={selectedChannel.name}
-                  className="w-10 h-10 rounded-full object-cover"
+                <AvatarIcon
+                  isGroup
+                  size="sm"
+                  name={selectedChannel.name}
                 />
                 <div>
                   <div className="flex items-center gap-1.5">

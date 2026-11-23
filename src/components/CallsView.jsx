@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Phone, Video, PhoneIncoming, PhoneOutgoing, PhoneMissed, Link, Plus, Check } from 'lucide-react';
+import AvatarIcon from './AvatarIcon';
 
 export default function CallsView({ onStartCall }) {
   const [copiedLink, setCopiedLink] = useState(false);
@@ -8,7 +9,6 @@ export default function CallsView({ onStartCall }) {
       id: 'c1',
       name: 'Jordan Lee',
       handle: '@jordan_l',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120',
       type: 'video',
       direction: 'incoming',
       time: 'Yesterday, 8:45 pm',
@@ -18,7 +18,6 @@ export default function CallsView({ onStartCall }) {
       id: 'c2',
       name: 'Marcus Vance',
       handle: '@marcus_v',
-      avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=120',
       type: 'voice',
       direction: 'outgoing',
       time: 'Wednesday, 2:10 pm',
@@ -28,7 +27,6 @@ export default function CallsView({ onStartCall }) {
       id: 'c3',
       name: 'Elena Rostova',
       handle: '@elena_r',
-      avatar: 'https://images.unsplash.com/photo-1517841905240-472988babdf9?w=120',
       type: 'video',
       direction: 'incoming',
       time: '18 Nov, 11:20 am',
@@ -56,8 +54,7 @@ export default function CallsView({ onStartCall }) {
               onStartCall({
                 contact: {
                   name: 'Jordan Lee',
-                  handle: '@jordan_l',
-                  avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=120'
+                  handle: '@jordan_l'
                 },
                 type: 'voice'
               });
@@ -101,11 +98,7 @@ export default function CallsView({ onStartCall }) {
                   className="flex items-center justify-between p-2.5 rounded-xl hover:bg-[#f0f2f5] dark:hover:bg-[#202c33] transition-colors"
                 >
                   <div className="flex items-center gap-3 min-w-0">
-                    <img
-                      src={log.avatar}
-                      alt={log.name}
-                      className="w-11 h-11 rounded-full object-cover flex-shrink-0"
-                    />
+                    <AvatarIcon size="md" name={log.name} />
                     <div className="min-w-0">
                       <h4 className={`text-[15px] font-semibold truncate ${
                         log.missed ? 'text-rose-500' : 'text-[#111b21] dark:text-[#e9edef]'
@@ -127,7 +120,7 @@ export default function CallsView({ onStartCall }) {
 
                   <button
                     onClick={() => onStartCall({
-                      contact: { name: log.name, handle: log.handle, avatar: log.avatar },
+                      contact: { name: log.name, handle: log.handle },
                       type: log.type
                     })}
                     className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#00a884] cursor-pointer"

@@ -2,6 +2,7 @@ import React, { useState, useRef, useEffect } from 'react';
 import { 
   Search, 
   SquarePen, 
+  Camera,
   MoreVertical, 
   Archive, 
   ArrowLeft, 
@@ -22,6 +23,7 @@ import {
   CheckCheck as ReadAllIcon,
   Settings
 } from 'lucide-react';
+import AvatarIcon from './AvatarIcon';
 
 export default function Sidebar({
   user,
@@ -44,6 +46,8 @@ export default function Sidebar({
   setFocusMode,
   scheduledCount = 0,
   onOpenScheduledQueue,
+  onAcceptRequest,
+  onDeclineRequest,
   // 3-dots menu actions
   onOpenConnectedDevices,
   onOpenStarredMessages,
@@ -100,11 +104,20 @@ export default function Sidebar({
         )}
 
         <div className="flex items-center gap-1 text-[#54656f] dark:text-[#aebac1]">
-          {/* New Chat compose button */}
+          {/* Camera / Action button */}
+          <button
+            onClick={onNewChat}
+            title="Camera"
+            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#54656f] dark:text-[#aebac1] transition-colors cursor-pointer"
+          >
+            <Camera className="w-5 h-5" />
+          </button>
+
+          {/* New Chat compose button (Desktop) */}
           <button
             onClick={onNewChat}
             title="New Chat by @username"
-            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#0044ff] dark:text-[#0055ff] transition-colors cursor-pointer"
+            className="hidden md:inline-flex p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#54656f] dark:text-[#aebac1] transition-colors cursor-pointer"
           >
             <SquarePen className="w-5 h-5" />
           </button>
@@ -206,7 +219,7 @@ export default function Sidebar({
         </div>
       </div>
 
-      {/* 2. Search Bar */}
+      {/* 2. Rounded Pill Search Bar ("Search @username, phone, or chats...") */}
       <div className="px-3 pt-2.5 pb-2 border-b border-[#d1d7db]/40 dark:border-[#2a3942]/40">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#54656f] dark:text-[#8696a0]" />
@@ -214,8 +227,8 @@ export default function Sidebar({
             type="text"
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search or start new chat"
-            className="w-full pl-10 pr-4 py-2 rounded-lg bg-[#f0f2f5] dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[14px] focus:outline-none focus:ring-1 focus:ring-[#0044ff] transition-all"
+            placeholder="Search @username, phone, or chats..."
+            className="w-full pl-10 pr-4 py-2 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[14px] focus:outline-none focus:ring-1 focus:ring-[#00a884] transition-all"
           />
         </div>
       </div>
@@ -227,7 +240,7 @@ export default function Sidebar({
             onClick={() => setFocusMode(!focusMode)}
             className={`flex-1 py-1.5 px-3 rounded-full text-[12px] font-semibold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs ${
               focusMode
-                ? 'bg-gradient-to-r from-[#0055ff] to-[#7b2cbf] text-white shadow-sm'
+                ? 'bg-[#00a884] text-white shadow-xs'
                 : 'bg-[#f0f2f5] dark:bg-[#202c33] text-[#54656f] dark:text-[#aebac1] hover:bg-[#e9edef]'
             }`}
           >
@@ -240,13 +253,13 @@ export default function Sidebar({
             className="py-1.5 px-3 rounded-full text-[12px] font-semibold bg-[#f0f2f5] dark:bg-[#202c33] hover:bg-[#e9edef] dark:hover:bg-[#2a3942] text-[#54656f] dark:text-[#aebac1] flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
             title="View scheduled messages"
           >
-            <Clock className="w-3.5 h-3.5 text-[#0044ff]" />
-            <span>Scheduled: <strong className="text-[#0044ff]">{scheduledCount}</strong></span>
+            <Clock className="w-3.5 h-3.5 text-[#00a884]" />
+            <span>Scheduled: <strong className="text-[#00a884]">{scheduledCount}</strong></span>
           </button>
         </div>
       )}
 
-      {/* 4. Filter Pills */}
+      {/* 4. Horizontal Scrollable Filter Chips: All, Unread, Requests, Favourites, Groups */}
       {!viewingArchived && (
         <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-[#d1d7db]/40 dark:border-[#2a3942]/40">
           {folders.map((folder) => {
@@ -257,7 +270,7 @@ export default function Sidebar({
                 onClick={() => setActiveFolder(folder.id)}
                 className={`px-3 py-1 text-[13px] font-medium rounded-full transition-all whitespace-nowrap cursor-pointer ${
                   isActive
-                    ? 'bg-[#0044ff] text-white shadow-sm'
+                    ? 'bg-[#d9fdd3] dark:bg-[#103629] text-[#00a884] dark:text-[#25d366] shadow-xs font-semibold'
                     : 'bg-[#f0f2f5] dark:bg-[#202c33] text-[#54656f] dark:text-[#8696a0] hover:bg-[#e9edef] dark:hover:bg-[#2a3942]'
                 }`}
               >
@@ -329,16 +342,15 @@ export default function Sidebar({
                     : 'hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/50'
                 }`}
               >
-                {/* Contact Avatar */}
+                {/* Contact Silhouette Avatar (Zero stock profile photos!) */}
                 <div className="relative flex-shrink-0">
-                  <img
-                    src={chat.avatar}
-                    alt={chat.name}
-                    className="w-12 h-12 rounded-full object-cover"
+                  <AvatarIcon
+                    size="md"
+                    isGroup={chat.isGroup}
+                    name={chat.name}
+                    showOnline={chat.online}
+                    online={chat.online}
                   />
-                  {chat.online && (
-                    <span className="absolute bottom-0 right-0 w-3 h-3 bg-emerald-500 rounded-full ring-2 ring-white dark:ring-[#111b21]" />
-                  )}
                 </div>
 
                 {/* Contact Details (16px name, 14px preview) */}
@@ -349,11 +361,11 @@ export default function Sidebar({
                         {chat.name}
                       </h3>
                       {chat.pinned && (
-                        <Pin className="w-3.5 h-3.5 text-[#0044ff] fill-[#0044ff] inline" />
+                        <Pin className="w-3.5 h-3.5 text-[#00a884] fill-[#00a884] inline" />
                       )}
                     </div>
                     <span className={`text-[12px] ${
-                      chat.unreadCount > 0 ? 'text-[#0044ff] font-semibold' : 'text-[#667781] dark:text-[#8696a0]'
+                      chat.unreadCount > 0 ? 'text-[#00a884] font-semibold' : 'text-[#667781] dark:text-[#8696a0]'
                     }`}>
                       {lastMsg?.time || ''}
                     </span>
@@ -376,7 +388,7 @@ export default function Sidebar({
                           : lastMsg?.deletedForEveryone
                           ? 'text-[#8696a0] italic'
                           : chat.typing
-                          ? 'text-[#0044ff] font-medium italic'
+                          ? 'text-[#00a884] font-medium italic'
                           : chat.unreadCount > 0
                           ? 'text-[#111b21] dark:text-white font-medium'
                           : 'text-[#667781] dark:text-[#8696a0]'
@@ -387,7 +399,7 @@ export default function Sidebar({
 
                     <div className="flex items-center gap-1">
                       {chat.unreadCount > 0 && (
-                        <span className="px-1.5 py-0.5 text-[11px] font-bold rounded-full bg-[#0044ff] text-white min-w-[20px] text-center shadow-sm flex-shrink-0">
+                        <span className="px-1.5 py-0.5 text-[11px] font-bold rounded-full bg-[#25d366] text-[#111b21] min-w-[20px] text-center shadow-xs flex-shrink-0">
                           {chat.unreadCount}
                         </span>
                       )}
@@ -408,6 +420,24 @@ export default function Sidebar({
                       </button>
                     </div>
                   </div>
+
+                  {/* Accept / Decline for Incoming Message Requests */}
+                  {chat.status === 'pending' && (
+                    <div className="flex items-center gap-2 mt-2 pt-1 border-t border-slate-200/60 dark:border-white/5" onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => onAcceptRequest?.(chat.id)}
+                        className="px-3 py-1 rounded-lg bg-[#00a884] hover:bg-[#008f6f] text-white text-[12px] font-bold cursor-pointer transition-colors shadow-xs"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => onDeclineRequest?.(chat.id)}
+                        className="px-3 py-1 rounded-lg bg-rose-50 dark:bg-rose-500/10 text-rose-600 dark:text-rose-400 hover:bg-rose-100 text-[12px] font-semibold cursor-pointer transition-colors"
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* WhatsApp-Style Chevron Dropdown Menu */}

@@ -1,6 +1,7 @@
 import React from 'react';
 import { Settings } from 'lucide-react';
 import NexoLogo from './NexoLogo';
+import AvatarIcon from './AvatarIcon';
 import { ChatsIcon, UpdatesIcon, CommunitiesIcon, CallsIcon } from './WhatsAppIcons';
 
 export default function NavigationRail({
@@ -102,17 +103,17 @@ export default function NavigationRail({
           </div>
         </button>
 
-        {/* User Profile Avatar */}
+        {/* User Profile Avatar (Monochrome Silhouette Icon) */}
         <button
           onClick={onOpenSettings}
           className="group relative p-0.5 rounded-full ring-2 ring-transparent hover:ring-[#25d366] transition-all cursor-pointer"
         >
-          <img
-            src={user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}
-            alt={user?.name || 'Profile'}
-            className="w-9 h-9 rounded-full object-cover"
+          <AvatarIcon
+            size="sm"
+            name={user?.name || 'You'}
+            showOnline
+            online
           />
-          <span className="absolute bottom-0 right-0 w-2.5 h-2.5 bg-[#25d366] rounded-full ring-2 ring-[#f0f2f5] dark:ring-[#202c33]" />
 
           <div className="absolute left-[72px] px-2.5 py-1 bg-[#111b21] dark:bg-white text-white dark:text-[#111b21] text-[11.5px] font-medium rounded-md shadow-lg pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap z-50">
             {user?.name || 'Profile'} ({user?.username || '@username'})

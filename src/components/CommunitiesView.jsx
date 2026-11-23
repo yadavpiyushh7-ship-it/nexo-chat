@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Users, Plus, ChevronRight, MessageSquare } from 'lucide-react';
+import AvatarIcon from './AvatarIcon';
 import { DEFAULT_COMMUNITIES } from '../mockData';
 
 export default function CommunitiesView({ onSelectCommunityGroup }) {
@@ -18,7 +19,7 @@ export default function CommunitiesView({ onSelectCommunityGroup }) {
     const newCom = {
       id: `com_${Date.now()}`,
       name: comName.trim(),
-      avatar: 'https://images.unsplash.com/photo-1522071820081-009f0129c71c?w=150',
+      avatar: null,
       description: comDesc.trim() || 'New Nexo community workspace.',
       membersCount: 1,
       groups: [
@@ -73,10 +74,10 @@ export default function CommunitiesView({ onSelectCommunityGroup }) {
                 }`}
               >
                 <div className="flex items-center gap-3 mb-2">
-                  <img
-                    src={com.avatar}
-                    alt={com.name}
-                    className="w-12 h-12 rounded-2xl object-cover ring-2 ring-[#00a884]/20"
+                  <AvatarIcon
+                    isGroup
+                    size="md"
+                    name={com.name}
                   />
                   <div className="flex-1 min-w-0">
                     <h3 className="text-[16px] font-semibold text-[#111b21] dark:text-[#e9edef] truncate">
@@ -102,10 +103,10 @@ export default function CommunitiesView({ onSelectCommunityGroup }) {
           <div className="flex-1 flex flex-col h-full overflow-hidden">
             <div className="h-[60px] px-6 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <img
-                  src={selectedCommunity.avatar}
-                  alt={selectedCommunity.name}
-                  className="w-10 h-10 rounded-2xl object-cover"
+                <AvatarIcon
+                  isGroup
+                  size="sm"
+                  name={selectedCommunity.name}
                 />
                 <div>
                   <h3 className="text-[16px] font-bold text-[#111b21] dark:text-white">

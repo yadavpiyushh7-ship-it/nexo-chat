@@ -13,8 +13,8 @@ export default function ShareContactModal({ isOpen, onClose, onSubmit }) {
 
     onSubmit({
       name: name.trim(),
-      phoneOrHandle: phoneOrHandle.trim() || '+1 (555) 019-2834',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=100'
+      phoneOrHandle: phoneOrHandle.trim() || '+91 98201 12345',
+      avatar: null
     });
     onClose();
   };

@@ -1,5 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { Plus, Camera, Edit3, MoreVertical, X, Check, Eye, Trash2, ArrowLeft, Image as ImageIcon } from 'lucide-react';
+import AvatarIcon from './AvatarIcon';
 
 export default function StatusView({ user }) {
   const [myStatuses, setMyStatuses] = useState([]);
@@ -36,8 +37,8 @@ export default function StatusView({ user }) {
       time: 'Just now',
       timestamp: Date.now(),
       views: 0,
-      author: user?.name || 'Alex Morgan',
-      avatar: user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120'
+      author: user?.name || 'You',
+      avatar: null
     };
 
     setMyStatuses([newStatus, ...myStatuses]);
@@ -69,8 +70,8 @@ export default function StatusView({ user }) {
       time: 'Just now',
       timestamp: Date.now(),
       views: 0,
-      author: user?.name || 'Alex Morgan',
-      avatar: user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=120'
+      author: user?.name || 'You',
+      avatar: null
     };
 
     setMyStatuses([newStatus, ...myStatuses]);
@@ -142,12 +143,9 @@ export default function StatusView({ user }) {
             className="flex items-center gap-3.5 p-3 rounded-2xl bg-[#f0f2f5]/80 dark:bg-[#202c33]/70 hover:bg-[#f0f2f5] dark:hover:bg-[#202c33] transition-colors cursor-pointer"
           >
             <div className="relative flex-shrink-0">
-              <img
-                src={user?.avatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=100'}
-                alt="My status"
-                className={`w-12 h-12 rounded-full object-cover ${
-                  myStatuses.length > 0 ? 'ring-2 ring-[#00a884] p-0.5' : ''
-                }`}
+              <AvatarIcon
+                size="md"
+                name={user?.name || 'You'}
               />
               <button
                 onClick={(e) => {
@@ -257,10 +255,9 @@ export default function StatusView({ user }) {
               </div>
               <div className="flex items-center justify-between text-white">
                 <div className="flex items-center gap-2.5">
-                  <img
-                    src={viewingStatus.avatar}
-                    alt={viewingStatus.author}
-                    className="w-9 h-9 rounded-full object-cover ring-2 ring-white/60"
+                  <AvatarIcon
+                    size="sm"
+                    name={viewingStatus.author}
                   />
                   <div>
                     <h5 className="text-[14.5px] font-bold leading-tight">{viewingStatus.author}</h5>

@@ -10,7 +10,7 @@ export default function MobileNavBar({ activeTab, setActiveTab, unreadTotal = 0 
   ];
 
   return (
-    <nav className="md:hidden fixed bottom-0 left-0 right-0 h-[62px] bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-around z-30 select-none px-2 transition-colors">
+    <nav className="md:hidden fixed bottom-0 left-0 right-0 h-[64px] bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-around z-30 select-none px-2 transition-colors">
       {tabs.map((tab) => {
         const Icon = tab.icon;
         const isActive = activeTab === tab.id;
