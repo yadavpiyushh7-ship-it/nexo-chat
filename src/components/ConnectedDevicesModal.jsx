@@ -76,16 +76,19 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
       })
       .catch((err) => console.warn('linked_devices modal insert err:', err));
 
-    const handleSuccessfulLink = (devInfoPayload) => {
-      const devInfo = devInfoPayload || {
-        id: `dev_${Date.now()}`,
-        os: 'Mobile Device (Nexo App)',
-        isCurrent: false,
-        status: 'Active now',
-        location: 'Linked via Realtime QR',
-        isMobile: true,
-        lastActive: 'Just now'
-      };
+    const handleSuccessfulLink = (devInfoPayload, explicitToken = freshToken) => {
+      const devInfo = devInfoPayload
+        ? { ...devInfoPayload, linkToken: devInfoPayload.linkToken || explicitToken }
+        : {
+            id: `dev_${Date.now()}`,
+            linkToken: explicitToken,
+            os: 'Mobile Device (Nexo App)',
+            isCurrent: false,
+            status: 'Active now',
+            location: 'Linked via Realtime QR',
+            isMobile: true,
+            lastActive: 'Just now'
+          };
 
       setLinkedDevices((prev) => {
         const updated = [devInfo, ...prev.filter((d) => d.id !== devInfo.id)];
@@ -95,9 +98,8 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
         return updated;
       });
 
-      // Automatically close linking screen on real-time event without manual refresh!
       setIsLinking(false);
-      setSuccessToast('New device linked successfully! Synced in real-time.');
+      setSuccessToast('Linked device added and synced in real time.');
       setTimeout(() => setSuccessToast(''), 4000);
     };
 
@@ -118,7 +120,8 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
           const updated = payload.new;
           if (updated && updated.status === 'linked') {
             const devInfo = updated.device_info ? {
-              id: `dev_${Date.now()}`,
+              id: updated.device_info.id || `dev_${Date.now()}`,
+              linkToken: freshToken,
               os: updated.device_info.os || 'Mobile Device (Linked)',
               isCurrent: false,
               status: 'Active now',
@@ -126,13 +129,13 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
               isMobile: true,
               lastActive: 'Just now'
             } : null;
-            handleSuccessfulLink(devInfo);
+            handleSuccessfulLink(devInfo, freshToken);
           }
         }
       )
       .on('broadcast', { event: 'device-linked' }, ({ payload }) => {
         if (isCancelled) return;
-        handleSuccessfulLink(payload?.deviceInfo);
+        handleSuccessfulLink(payload?.deviceInfo, payload?.linkToken || freshToken);
       })
       .subscribe();
 
@@ -149,7 +152,8 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
         if (data && data.status === 'linked') {
           if (pollInterval) clearInterval(pollInterval);
           const devInfo = data.device_info ? {
-            id: `dev_${Date.now()}`,
+            id: data.device_info.id || `dev_${Date.now()}`,
+            linkToken: freshToken,
             os: data.device_info.os || 'Mobile Device (Linked)',
             isCurrent: false,
             status: 'Active now',
@@ -157,7 +161,7 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
             isMobile: true,
             lastActive: 'Just now'
           } : null;
-          handleSuccessfulLink(devInfo);
+          handleSuccessfulLink(devInfo, freshToken);
         }
       } catch (err) {}
     }, 2000);
@@ -193,13 +197,41 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
     } catch {}
   };
 
-  const handleLogoutSecondary = (id) => {
-    const updated = linkedDevices.filter((d) => d.id !== id);
+  const handleLogoutSecondary = async (deviceOrId) => {
+    const dev = typeof deviceOrId === 'string'
+      ? linkedDevices.find((d) => d.id === deviceOrId)
+      : deviceOrId;
+    const targetId = dev?.id || deviceOrId;
+    const targetToken = dev?.linkToken || null;
+
+    const updated = linkedDevices.filter((d) => d.id !== targetId);
     setLinkedDevices(updated);
     try {
       localStorage.setItem('nexo_linked_devices', JSON.stringify(updated));
     } catch {}
-    setSuccessToast('Device session logged out');
+
+    // Persist revoke in Supabase linked_devices & broadcast remote logout to linked browser
+    try {
+      if (targetToken) {
+        await supabase
+          .from('linked_devices')
+          .update({ status: 'revoked' })
+          .eq('link_token', targetToken);
+      }
+      const revokeChan = supabase.channel('nexo-linked-devices');
+      revokeChan.subscribe((status) => {
+        if (status === 'SUBSCRIBED') {
+          revokeChan.send({
+            type: 'broadcast',
+            event: 'device-logout',
+            payload: { deviceId: targetId, linkToken: targetToken, revokedAt: new Date().toISOString() },
+          });
+          setTimeout(() => supabase.removeChannel(revokeChan), 1500);
+        }
+      });
+    } catch {}
+
+    setSuccessToast('Remote device logged out & session revoked');
     setTimeout(() => setSuccessToast(''), 3000);
   };
 
@@ -242,22 +274,42 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
         <div className="flex-1 overflow-y-auto p-5 sm:p-6 space-y-6">
           {!isLinking ? (
             <>
-              {/* Illustration */}
+              {/* Mobile Preview & Synced Session Illustration */}
               <div className="flex flex-col items-center justify-center p-4 bg-[#fcf5eb]/60 dark:bg-[#182229]/60 rounded-2xl border border-[#e2d9cd]/80 dark:border-white/5">
-                <svg width="240" height="100" viewBox="0 0 240 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                  <g transform="translate(20, 15)">
-                    <rect x="0" y="0" width="70" height="46" rx="4" fill="#202c33" stroke="#8696a0" strokeWidth="2" />
-                    <rect x="4" y="4" width="62" height="38" rx="2" fill="#00a884" opacity="0.85" />
-                    <line x1="10" y1="12" x2="35" y2="12" stroke="#ffffff" strokeWidth="2" strokeLinecap="round" />
-                    <line x1="10" y1="20" x2="48" y2="20" stroke="#ffffff" strokeWidth="1.5" strokeLinecap="round" opacity="0.7" />
-                    <path d="M-8 46 L78 46 L74 52 L-4 52 Z" fill="#8696a0" />
-                  </g>
-                  <g transform="translate(155, 10)">
-                    <rect x="0" y="0" width="34" height="64" rx="7" fill="#111b21" stroke="#8696a0" strokeWidth="2" />
-                    <rect x="3" y="6" width="28" height="52" rx="4" fill="#25d366" opacity="0.85" />
-                    <line x1="12" y1="3" x2="22" y2="3" stroke="#8696a0" strokeWidth="1.5" strokeLinecap="round" />
-                  </g>
-                </svg>
+                <div className="w-56 rounded-2xl bg-white dark:bg-[#111b21] border border-slate-300/80 dark:border-white/15 shadow-lg overflow-hidden mb-3">
+                  <div className="px-2.5 py-1.5 bg-[#f0f2f5] dark:bg-[#202c33] flex items-center justify-between border-b border-black/5 dark:border-white/10">
+                    <div className="w-4 h-4 rounded-full bg-gradient-to-tr from-[#0055ff] to-[#d946ef]" />
+                    <span className="text-[9.5px] font-bold text-[#111b21] dark:text-white">Nexo Mobile Preview</span>
+                    <div className="flex gap-1">
+                      <span className="w-2 h-2 rounded-full bg-[#8696a0]/50" />
+                      <span className="w-2 h-2 rounded-full bg-[#8696a0]/50" />
+                    </div>
+                  </div>
+                  <div className="p-2 space-y-1.5">
+                    <div className="px-2 py-1 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] text-[8.5px] text-[#8696a0]">
+                      Ask AI or Search
+                    </div>
+                    <div className="flex gap-1 overflow-hidden">
+                      <span className="px-1.5 py-0.5 rounded-full bg-[#d9fdd3] text-[#00a884] text-[7.5px] font-bold">All</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] text-[#8696a0] text-[7.5px]">Unread</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] text-[#8696a0] text-[7.5px]">Favourites</span>
+                      <span className="px-1.5 py-0.5 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] text-[#8696a0] text-[7.5px]">Groups</span>
+                    </div>
+                    <div className="flex items-center justify-between px-1 py-0.5">
+                      <div className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded-full bg-[#0055ff]/20" />
+                        <span className="text-[8.5px] font-semibold text-[#111b21] dark:text-white">Placement Cell</span>
+                      </div>
+                      <span className="text-[7.5px] text-[#00a884] font-bold">9:10 am</span>
+                    </div>
+                  </div>
+                  <div className="px-2 py-1 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-black/5 dark:border-white/10 flex justify-around text-[7.5px] font-semibold text-[#54656f] dark:text-[#8696a0]">
+                    <span className="text-[#00a884]">Chats</span>
+                    <span>Updates</span>
+                    <span>Communities</span>
+                    <span>Calls</span>
+                  </div>
+                </div>
 
                 <h4 className="text-[15.5px] font-bold text-[#111b21] dark:text-white mt-1">
                   Use Nexo on Web & Mobile
@@ -334,7 +386,7 @@ export default function ConnectedDevicesModal({ isOpen, onClose, user }) {
                       </div>
 
                       <button
-                        onClick={() => handleLogoutSecondary(dev.id)}
+                        onClick={() => handleLogoutSecondary(dev)}
                         className="px-2.5 py-1 text-[12px] font-medium text-rose-600 dark:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-500/10 rounded-lg cursor-pointer transition-colors"
                         title="Log out session"
                       >

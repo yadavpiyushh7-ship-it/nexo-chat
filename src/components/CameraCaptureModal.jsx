@@ -1,5 +1,6 @@
 import React, { useRef, useState, useEffect } from 'react';
 import { Camera, X, RefreshCw, Check } from 'lucide-react';
+import { openPreferredMediaStream } from '../lib/mediaDevices';
 
 export default function CameraCaptureModal({ isOpen, onClose, onCapture }) {
   const videoRef = useRef(null);
@@ -16,19 +17,20 @@ export default function CameraCaptureModal({ isOpen, onClose, onCapture }) {
       try {
         setErrorMessage('');
         setCapturedDataUrl(null);
-        const stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'user', width: { ideal: 640 }, height: { ideal: 480 } },
-          audio: false
+        const mediaInfo = await openPreferredMediaStream({
+          audio: false,
+          video: true,
+          facingMode: 'user',
         });
 
         if (!mounted) {
-          stream.getTracks().forEach((track) => track.stop());
+          mediaInfo.stream.getTracks().forEach((track) => track.stop());
           return;
         }
 
-        streamRef.current = stream;
+        streamRef.current = mediaInfo.stream;
         if (videoRef.current) {
-          videoRef.current.srcObject = stream;
+          videoRef.current.srcObject = mediaInfo.stream;
         }
       } catch (err) {
         if (mounted) {

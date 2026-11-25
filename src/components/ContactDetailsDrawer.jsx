@@ -1,20 +1,26 @@
 import React, { useState } from 'react';
 import { 
   X, 
-  Phone, 
-  Video, 
-  ShieldCheck, 
   Bell, 
   Trash2, 
   Image as ImageIcon, 
-  Link as LinkIcon, 
   FileText,
-  Lock
+  Lock,
+  Palette
 } from 'lucide-react';
 import AvatarIcon from './AvatarIcon';
+import { BUBBLE_ACCENTS, CHAT_WALLPAPERS } from '../lib/themeUtils';
 
-export default function ContactDetailsDrawer({ contact, onClose, onClearChat, onDeleteChat }) {
-  const [activeMediaTab, setActiveMediaTab] = useState('media');
+export default function ContactDetailsDrawer({
+  contact,
+  onClose,
+  onClearChat,
+  onDeleteChat,
+  bubbleAccent,
+  chatWallpaper,
+  onChangeTheme
+}) {
+  const [activeMediaTab, setActiveMediaTab] = useState('docs');
   const [isMuted, setIsMuted] = useState(false);
 
   if (!contact) return null;
@@ -24,7 +30,7 @@ export default function ContactDetailsDrawer({ contact, onClose, onClearChat, on
       {/* Header */}
       <div className="h-[60px] px-4 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between flex-shrink-0">
         <h3 className="text-[16px] font-bold text-[#111b21] dark:text-[#e9edef]">
-          Contact Info
+          Chat Info & Theme
         </h3>
         <button
           onClick={onClose}
@@ -36,7 +42,7 @@ export default function ContactDetailsDrawer({ contact, onClose, onClearChat, on
 
       {/* Body */}
       <div className="flex-1 overflow-y-auto divide-y divide-[#d1d7db]/40 dark:divide-[#2a3942]/50">
-        {/* Profile Card (Monochrome Silhouette Icon) */}
+        {/* Profile Card */}
         <div className="p-6 flex flex-col items-center text-center">
           <div className="relative mb-3">
             <AvatarIcon
@@ -50,7 +56,7 @@ export default function ContactDetailsDrawer({ contact, onClose, onClearChat, on
           <h2 className="text-[19px] font-bold text-[#111b21] dark:text-white">
             {contact.name}
           </h2>
-          <p className="text-[13px] text-[#00a884] dark:text-[#00c298] font-semibold mt-0.5">
+          <p className="text-[13px] text-[#0055ff] dark:text-sky-400 font-semibold mt-0.5">
             {contact.handle || '@contact'}
           </p>
           <p className="text-[12px] text-[#667781] dark:text-[#8696a0] mt-1">
@@ -61,76 +67,121 @@ export default function ContactDetailsDrawer({ contact, onClose, onClearChat, on
         {/* Bio / About */}
         <div className="p-4 space-y-1">
           <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#667781] dark:text-[#8696a0]">
-            About / Bio
+            About / Role
           </span>
           <p className="text-[14px] text-[#111b21] dark:text-[#e9edef] leading-relaxed">
-            {contact.bio || 'Available on Nexo.'}
+            {contact.bio || 'B.Tech CSE Placement Hub'}
           </p>
         </div>
+
+        {/* Custom Chat Themes & Wallpapers */}
+        {onChangeTheme && (
+          <div className="p-4 space-y-3.5">
+            <div className="flex items-center gap-2">
+              <Palette className="w-4 h-4 text-[#0055ff]" />
+              <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#667781] dark:text-[#8696a0]">
+                Bubble Accent Color
+              </span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {BUBBLE_ACCENTS.map((acc) => {
+                const isSelected = bubbleAccent === acc.id;
+                return (
+                  <button
+                    key={acc.id}
+                    type="button"
+                    onClick={() => onChangeTheme(acc.id, chatWallpaper)}
+                    className={`p-2 rounded-xl border flex items-center gap-2 text-left cursor-pointer transition-all ${
+                      isSelected
+                        ? 'border-[#0055ff] bg-[#0055ff]/10 ring-1 ring-[#0055ff]'
+                        : 'border-slate-200 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <span
+                      className="w-4 h-4 rounded-full flex-shrink-0"
+                      style={{ backgroundColor: acc.swatch }}
+                    />
+                    <span className="text-[12px] font-semibold text-[#111b21] dark:text-white truncate">
+                      {acc.label}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            <div>
+              <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#667781] dark:text-[#8696a0] block mb-2">
+                Chat Wallpaper
+              </span>
+              <div className="flex flex-wrap gap-1.5">
+                {CHAT_WALLPAPERS.map((wp) => {
+                  const isSelected = chatWallpaper === wp.id;
+                  return (
+                    <button
+                      key={wp.id}
+                      type="button"
+                      onClick={() => onChangeTheme(bubbleAccent, wp.id)}
+                      className={`px-2.5 py-1.5 rounded-lg text-[11.5px] font-semibold cursor-pointer transition-all ${
+                        isSelected
+                          ? 'bg-[#0055ff] text-white'
+                          : 'bg-[#f0f2f5] dark:bg-[#202c33] text-[#54656f] dark:text-[#aebac1] hover:bg-black/10'
+                      }`}
+                    >
+                      {wp.label}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Shared Media Tabs */}
         <div className="p-4 space-y-3">
           <div className="flex items-center justify-between">
             <span className="text-[11.5px] font-bold uppercase tracking-wider text-[#667781] dark:text-[#8696a0]">
-              Media, Links & Docs
+              Shared Code, Links & Files
             </span>
-            <span className="text-[12px] text-[#00a884] font-medium">12 items</span>
           </div>
 
           <div className="flex items-center gap-1 bg-[#f0f2f5] dark:bg-[#202c33] p-1 rounded-xl">
-            <button
-              onClick={() => setActiveMediaTab('media')}
-              className={`flex-1 py-1 text-[12px] font-medium rounded-lg transition-all ${
-                activeMediaTab === 'media'
-                  ? 'bg-white dark:bg-[#111b21] text-[#00a884] shadow-sm'
-                  : 'text-[#667781] dark:text-[#8696a0]'
-              }`}
-            >
-              Media
-            </button>
-            <button
-              onClick={() => setActiveMediaTab('links')}
-              className={`flex-1 py-1 text-[12px] font-medium rounded-lg transition-all ${
-                activeMediaTab === 'links'
-                  ? 'bg-white dark:bg-[#111b21] text-[#00a884] shadow-sm'
-                  : 'text-[#667781] dark:text-[#8696a0]'
-              }`}
-            >
-              Links
-            </button>
-            <button
-              onClick={() => setActiveMediaTab('docs')}
-              className={`flex-1 py-1 text-[12px] font-medium rounded-lg transition-all ${
-                activeMediaTab === 'docs'
-                  ? 'bg-white dark:bg-[#111b21] text-[#00a884] shadow-sm'
-                  : 'text-[#667781] dark:text-[#8696a0]'
-              }`}
-            >
-              Docs
-            </button>
+            {['media', 'links', 'docs'].map((t) => (
+              <button
+                key={t}
+                onClick={() => setActiveMediaTab(t)}
+                className={`flex-1 py-1 text-[12px] font-medium rounded-lg capitalize transition-all ${
+                  activeMediaTab === t
+                    ? 'bg-white dark:bg-[#111b21] text-[#0055ff] shadow-sm'
+                    : 'text-[#667781] dark:text-[#8696a0]'
+                }`}
+              >
+                {t}
+              </button>
+            ))}
           </div>
 
           {activeMediaTab === 'media' && (
             <div className="p-4 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-center text-[#8696a0] text-[12.5px]">
-              <ImageIcon className="w-6 h-6 mx-auto mb-1 text-[#00a884]" />
-              <span>No shared photos or videos yet</span>
+              <ImageIcon className="w-6 h-6 mx-auto mb-1 text-[#0055ff]" />
+              <span>Full-resolution media shared in this chat appears here</span>
             </div>
           )}
 
           {activeMediaTab === 'links' && (
             <div className="space-y-2 text-[12px] pt-1">
-              <div className="p-2 rounded-lg bg-[#f0f2f5] dark:bg-[#202c33] truncate">
-                <span className="font-semibold block text-[#00a884]">figma.com/file/...</span>
-                <span className="text-[#8696a0] truncate">Nexo Design Tokens v2</span>
+              <div className="p-2.5 rounded-lg bg-[#f0f2f5] dark:bg-[#202c33] truncate">
+                <span className="font-semibold block text-[#0055ff] dark:text-sky-400">placements.jecrc.edu/drives/2027-sde</span>
+                <span className="text-[#8696a0] truncate">2027 Batch SDE Drive Registration</span>
               </div>
             </div>
           )}
 
           {activeMediaTab === 'docs' && (
             <div className="space-y-2 text-[12px] pt-1">
-              <div className="p-2 rounded-lg bg-[#f0f2f5] dark:bg-[#202c33] flex items-center gap-2">
-                <FileText className="w-4 h-4 text-[#00a884]" />
-                <span className="text-[#111b21] dark:text-white truncate">Capstone_Specification.pdf</span>
+              <div className="p-2.5 rounded-lg bg-[#f0f2f5] dark:bg-[#202c33] flex items-center gap-2">
+                <FileText className="w-4 h-4 text-[#0055ff]" />
+                <span className="text-[#111b21] dark:text-white truncate">Striver_SDE_Sheet_Notes.pdf</span>
               </div>
             </div>
           )}
@@ -158,35 +209,31 @@ export default function ContactDetailsDrawer({ contact, onClose, onClearChat, on
 
           <div className="flex items-center gap-3 text-[13px] text-[#667781] dark:text-[#8696a0] pt-1">
             <Lock className="w-4 h-4 text-[#00a884]" />
-            <span>Messages and calls are end-to-end encrypted.</span>
+            <span>Phone numbers hidden • Verified @username encryption.</span>
           </div>
         </div>
 
-        {/* Actions: Clear Chat & Delete Chat */}
+        {/* Actions */}
         <div className="p-4 space-y-2">
           <button
-            onClick={() => {
-              if (confirm('Are you sure you want to clear this chat history?')) {
-                onClearChat(contact.id);
-              }
-            }}
+            onClick={() => onClearChat(contact.id)}
             className="w-full py-2.5 px-3 rounded-xl bg-slate-100 hover:bg-slate-200 dark:bg-[#202c33] dark:hover:bg-[#2a3942] text-rose-600 dark:text-rose-400 text-[13.5px] font-medium flex items-center justify-center gap-2 transition-colors cursor-pointer"
           >
             <Trash2 className="w-4 h-4" />
-            <span>Clear Chat History</span>
+            <span>Clear Chat History (Keeps Bookmarks)</span>
           </button>
 
-          <button
-            onClick={() => {
-              if (confirm('Delete this chat entirely?')) {
+          {!contact.isSelfChat && (
+            <button
+              onClick={() => {
                 onDeleteChat(contact.id);
                 onClose();
-              }
-            }}
-            className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[13.5px] font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
-          >
-            <span>Delete Chat</span>
-          </button>
+              }}
+              className="w-full py-2.5 px-3 rounded-xl bg-rose-50 hover:bg-rose-100 dark:bg-rose-500/10 dark:hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[13.5px] font-semibold flex items-center justify-center gap-2 transition-colors cursor-pointer"
+            >
+              <span>Delete Chat</span>
+            </button>
+          )}
         </div>
       </div>
     </aside>

@@ -1,8 +1,38 @@
-import React, { useState, useRef } from 'react';
-import { Plus, Camera, Edit3, MoreVertical, X, Check, Eye, Trash2, ArrowLeft, Image as ImageIcon } from 'lucide-react';
+import React, { useState, useRef, useEffect } from 'react';
+import {
+  Plus,
+  Camera,
+  MoreVertical,
+  X,
+  Check,
+  Eye,
+  Trash2,
+  ArrowLeft,
+  Image as ImageIcon,
+  Briefcase,
+  Code2,
+  Youtube,
+  Radio
+} from 'lucide-react';
 import AvatarIcon from './AvatarIcon';
+import WorkspaceHubView from './WorkspaceHubView';
+import EdTechPrepView from './EdTechPrepView';
+import YouTubeHubView from './YouTubeHubView';
 
-export default function StatusView({ user }) {
+export default function StatusView({
+  user,
+  chats = [],
+  onSendMessageToChat,
+  onSaveToVault,
+  onShowToast,
+  initialSubTab = 'statuses',
+  workspaceInitialTab = 'gmail'
+}) {
+  const [mobileSubTab, setMobileSubTab] = useState(initialSubTab); // 'statuses' | 'workspace' | 'prep' | 'lectures'
+
+  useEffect(() => {
+    if (initialSubTab) setMobileSubTab(initialSubTab);
+  }, [initialSubTab]);
   const [myStatuses, setMyStatuses] = useState([]);
   const [viewingStatus, setViewingStatus] = useState(null); // null or status object
   const [composeMode, setComposeMode] = useState(null); // null, 'text', or 'photo'
@@ -89,8 +119,67 @@ export default function StatusView({ user }) {
   };
 
   return (
-    <div className="flex-1 h-full flex bg-[#f0f2f5] dark:bg-[#0c1317] select-none font-sans overflow-hidden">
-      
+    <div className="flex-1 h-full flex flex-col bg-[#f0f2f5] dark:bg-[#0c1317] select-none overflow-hidden">
+      {/* Mobile-Only Segmented Hub Bar inside Updates (Workspace, Prep Hub, Lectures live here on < 768px) */}
+      <div className="md:hidden px-3 py-2 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center gap-1.5 overflow-x-auto no-scrollbar flex-shrink-0">
+        {[
+          { id: 'statuses', label: 'Updates', icon: Radio },
+          { id: 'workspace', label: 'Workspace', icon: Briefcase },
+          { id: 'prep', label: 'Prep Hub', icon: Code2 },
+          { id: 'lectures', label: 'Lectures', icon: Youtube },
+        ].map((tab) => {
+          const Icon = tab.icon;
+          const active = mobileSubTab === tab.id;
+          return (
+            <button
+              key={tab.id}
+              type="button"
+              onClick={() => setMobileSubTab(tab.id)}
+              className={`px-3 py-1.5 rounded-full text-[12px] font-semibold flex items-center gap-1.5 whitespace-nowrap cursor-pointer transition-all ${
+                active
+                  ? 'bg-[#00a884] text-white shadow-xs'
+                  : 'bg-white dark:bg-[#111b21] text-[#54656f] dark:text-[#aebac1]'
+              }`}
+            >
+              <Icon className="w-3.5 h-3.5" />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Mobile Embedded Hub Views */}
+      {mobileSubTab === 'workspace' ? (
+        <div className="md:hidden flex-1 flex overflow-hidden">
+          <WorkspaceHubView
+            chats={chats}
+            onSendMessageToChat={onSendMessageToChat}
+            onSaveToVault={onSaveToVault}
+            onShowToast={onShowToast}
+            initialTab={workspaceInitialTab}
+          />
+        </div>
+      ) : mobileSubTab === 'prep' ? (
+        <div className="md:hidden flex-1 flex overflow-hidden">
+          <EdTechPrepView
+            chats={chats}
+            onSendMessageToChat={onSendMessageToChat}
+            onSaveToVault={onSaveToVault}
+            onShowToast={onShowToast}
+          />
+        </div>
+      ) : mobileSubTab === 'lectures' ? (
+        <div className="md:hidden flex-1 flex overflow-hidden">
+          <YouTubeHubView
+            chats={chats}
+            onSendMessageToChat={onSendMessageToChat}
+            onSaveToVault={onSaveToVault}
+            onShowToast={onShowToast}
+          />
+        </div>
+      ) : null}
+
+      <div className={`flex-1 h-full flex overflow-hidden ${mobileSubTab !== 'statuses' ? 'hidden md:flex' : 'flex'}`}>
       {/* ============================================================== */}
       {/* LEFT PANE: Header, My Status, Recent Updates                    */}
       {/* ============================================================== */}
@@ -224,6 +313,55 @@ export default function StatusView({ user }) {
               </div>
             </div>
           )}
+
+          {/* Mobile-Only Hub Launcher Cards inside Updates */}
+          <div className="md:hidden grid grid-cols-1 gap-2">
+            <button
+              type="button"
+              onClick={() => setMobileSubTab('workspace')}
+              className="p-3 rounded-2xl bg-[#0055ff]/10 border border-[#0055ff]/20 flex items-center justify-between text-left cursor-pointer"
+            >
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-[#0055ff] text-white">
+                  <Briefcase className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-[13.5px] font-bold text-[#111b21] dark:text-white">
+                    Workspace • Gmail, Google Meet & AI MoM
+                  </h4>
+                  <p className="text-[11.5px] text-[#667781] dark:text-[#8696a0]">
+                    Placement inbox, Instant Meet & MoM generator
+                  </p>
+                </div>
+              </div>
+            </button>
+
+            <div className="grid grid-cols-2 gap-2">
+              <button
+                type="button"
+                onClick={() => setMobileSubTab('prep')}
+                className="p-3 rounded-2xl bg-emerald-500/10 border border-emerald-500/20 text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Code2 className="w-4 h-4 text-[#00a884]" />
+                  <span className="text-[13px] font-bold text-[#111b21] dark:text-white">Prep Hub</span>
+                </div>
+                <p className="text-[11px] text-[#667781] dark:text-[#8696a0]">LeetCode, GFG & Sheets</p>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setMobileSubTab('lectures')}
+                className="p-3 rounded-2xl bg-rose-500/10 border border-rose-500/20 text-left cursor-pointer"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <Youtube className="w-4 h-4 text-rose-600" />
+                  <span className="text-[13px] font-bold text-[#111b21] dark:text-white">Lectures</span>
+                </div>
+                <p className="text-[11px] text-[#667781] dark:text-[#8696a0]">50+ CS & DSA Videos</p>
+              </button>
+            </div>
+          </div>
 
           {/* Recent / Viewed section */}
           <div>
@@ -522,6 +660,7 @@ export default function StatusView({ user }) {
         </div>
       )}
 
+      </div>
     </div>
   );
 }

@@ -14,9 +14,9 @@ import {
   User,
   BarChart2,
   Calendar,
-  Plus,
   Trash2,
-  Square
+  Code2,
+  Check
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import AiToneModal from './AiToneModal';
@@ -25,18 +25,17 @@ import CameraCaptureModal from './CameraCaptureModal';
 import CreatePollModal from './CreatePollModal';
 import CreateEventModal from './CreateEventModal';
 import ShareContactModal from './ShareContactModal';
+import { useLanguage } from '../contexts/LanguageContext';
 
-// Default built-in sticker pack
 const DEFAULT_STICKERS = [
   { id: 'stk_1', label: 'Celebrate', emoji: '🎉', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%2325d366" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">🎉</text></svg>' },
   { id: 'stk_2', label: 'Heart Eyes', emoji: '😍', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ff3b30" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">😍</text></svg>' },
   { id: 'stk_3', label: 'Fire', emoji: '🔥', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ff9500" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">🔥</text></svg>' },
-  { id: 'stk_4', label: 'Cool Cat', emoji: '😎', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23007aff" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">😎</text></svg>' },
+  { id: 'stk_4', label: 'Cool', emoji: '😎', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23007aff" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">😎</text></svg>' },
   { id: 'stk_5', label: 'Rocket', emoji: '🚀', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23af52de" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">🚀</text></svg>' },
   { id: 'stk_6', label: 'Super Star', emoji: '⭐', url: 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 100 100"><rect width="100" height="100" rx="20" fill="%23ffcc00" opacity="0.15"/><text x="50" y="65" font-size="50" text-anchor="middle">⭐</text></svg>' }
 ];
 
-// Reaction GIFs
 const POPULAR_GIFS = [
   { id: 'g1', title: 'Happy Dance', url: 'https://media.giphy.com/media/blSTtZehjAZ8I/giphy.gif' },
   { id: 'g2', title: 'Thumbs Up', url: 'https://media.giphy.com/media/111ebonMs90YLu/giphy.gif' },
@@ -46,6 +45,25 @@ const POPULAR_GIFS = [
   { id: 'g6', title: 'Applause', url: 'https://media.giphy.com/media/nbvFVPiEiJH6JOGIok/giphy.gif' }
 ];
 
+const CODE_LANGUAGES = [
+  { id: 'cpp', label: 'C++' },
+  { id: 'python', label: 'Python' },
+  { id: 'javascript', label: 'JavaScript' },
+  { id: 'sql', label: 'SQL' },
+];
+
+function formatExactFileSize(bytes) {
+  if (bytes === undefined || bytes === null) return '';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
+}
+
+function getFileExtension(name) {
+  if (!name || !name.includes('.')) return 'FILE';
+  return name.split('.').pop().toUpperCase().slice(0, 6);
+}
+
 export default function Composer({
   onSendMessage,
   replyingTo,
@@ -54,9 +72,17 @@ export default function Composer({
   focusMode,
   onScheduleMessage
 }) {
+  const { t } = useLanguage();
   const [text, setText] = useState('');
   const [imagePreview, setImagePreview] = useState(null);
-  const [pendingAttachment, setPendingAttachment] = useState(null); // { type, fileName, fileSize, fileUrl }
+  const [imageMeta, setImageMeta] = useState(null); // { fileName, fileSize, fileExt }
+  const [pendingAttachment, setPendingAttachment] = useState(null);
+
+  // Built-in Code Snippet Composer
+  const [showCodeModal, setShowCodeModal] = useState(false);
+  const [codeLang, setCodeLang] = useState('cpp');
+  const [codeContent, setCodeContent] = useState('');
+  const [pendingCodeBlock, setPendingCodeBlock] = useState(null); // { language, code }
 
   // Modals & Popovers
   const [showToneModal, setShowToneModal] = useState(false);
@@ -79,24 +105,12 @@ export default function Composer({
   const recordTimerRef = useRef(null);
   const audioStreamRef = useRef(null);
 
-  // Custom user stickers from localStorage
-  const [customStickers, setCustomStickers] = useState(() => {
-    try {
-      return JSON.parse(localStorage.getItem('nexo_custom_stickers') || '[]');
-    } catch {
-      return [];
-    }
-  });
-
-  // Refs for hidden inputs
   const photoInputRef = useRef(null);
   const docInputRef = useRef(null);
   const audioInputRef = useRef(null);
-  const stickerCreatorInputRef = useRef(null);
   const attachMenuRef = useRef(null);
   const emojiTrayRef = useRef(null);
 
-  // Click outside listener for attachment menu and emoji tray
   useEffect(() => {
     const handleClickOutside = (e) => {
       if (attachMenuRef.current && !attachMenuRef.current.contains(e.target)) {
@@ -112,7 +126,6 @@ export default function Composer({
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
 
-  // Clean up recording timer on unmount
   useEffect(() => {
     return () => {
       if (recordTimerRef.current) clearInterval(recordTimerRef.current);
@@ -122,21 +135,15 @@ export default function Composer({
     };
   }, []);
 
-  // Format seconds to mm:ss
   const formatRecordingTime = (secs) => {
     const mins = Math.floor(secs / 60);
     const rem = secs % 60;
     return `${mins}:${rem < 10 ? '0' : ''}${rem}`;
   };
 
-  // Real Mic Recording: Start
   const startRecording = async () => {
     try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        alert('Microphone access is not supported in this browser.');
-        return;
-      }
-
+      if (!navigator.mediaDevices?.getUserMedia) return;
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       audioStreamRef.current = stream;
       audioChunksRef.current = [];
@@ -152,56 +159,47 @@ export default function Composer({
       mediaRecorderRef.current = recorder;
 
       recorder.ondataavailable = (e) => {
-        if (e.data && e.data.size > 0) {
-          audioChunksRef.current.push(e.data);
-        }
+        if (e.data && e.data.size > 0) audioChunksRef.current.push(e.data);
       };
 
       recorder.start(100);
       setIsRecording(true);
       setRecordingSeconds(0);
-
       recordTimerRef.current = setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      console.warn('Microphone permission or recording error:', err);
-      alert('Could not access microphone. Please ensure microphone permissions are granted in your browser settings.');
+      console.warn('Microphone access error:', err);
     }
   };
 
-  // Real Mic Recording: Stop and Send
   const stopAndSendRecording = () => {
     if (!mediaRecorderRef.current || !isRecording) return;
-
     if (recordTimerRef.current) {
       clearInterval(recordTimerRef.current);
       recordTimerRef.current = null;
     }
 
     const currentDuration = recordingSeconds;
-
     mediaRecorderRef.current.onstop = () => {
       const audioBlob = new Blob(audioChunksRef.current, {
         type: mediaRecorderRef.current.mimeType || 'audio/webm'
       });
 
-      // Stop stream tracks
       if (audioStreamRef.current) {
         audioStreamRef.current.getTracks().forEach((t) => t.stop());
         audioStreamRef.current = null;
       }
 
-      // Convert audio blob to base64 Data URL for instant playback and sync
       const reader = new FileReader();
       reader.onloadend = () => {
-        const base64Audio = reader.result;
         onSendMessage({
           text: '',
           mediaType: 'audio',
-          mediaUrl: base64Audio,
+          mediaUrl: reader.result,
           duration: currentDuration || 1,
-          fileName: `Voice_${Date.now().toString().slice(-4)}.m4a`
+          fileName: `Voice_${Date.now().toString().slice(-4)}.m4a`,
+          fileSize: formatExactFileSize(audioBlob.size),
         });
       };
       reader.readAsDataURL(audioBlob);
@@ -213,7 +211,6 @@ export default function Composer({
     mediaRecorderRef.current.stop();
   };
 
-  // Real Mic Recording: Cancel
   const cancelRecording = () => {
     if (recordTimerRef.current) {
       clearInterval(recordTimerRef.current);
@@ -221,9 +218,7 @@ export default function Composer({
     }
     if (mediaRecorderRef.current && isRecording) {
       mediaRecorderRef.current.onstop = null;
-      try {
-        mediaRecorderRef.current.stop();
-      } catch {}
+      try { mediaRecorderRef.current.stop(); } catch {}
     }
     if (audioStreamRef.current) {
       audioStreamRef.current.getTracks().forEach((t) => t.stop());
@@ -234,24 +229,31 @@ export default function Composer({
     audioChunksRef.current = [];
   };
 
-  // Send typed message / images / attachments
   const handleSend = () => {
-    if (!text.trim() && !imagePreview && !pendingAttachment) return;
+    if (!text.trim() && !imagePreview && !pendingAttachment && !pendingCodeBlock) return;
+
+    const finalText = pendingCodeBlock
+      ? `${text.trim() ? text.trim() + '\n' : ''}\`\`\`${pendingCodeBlock.language}\n${pendingCodeBlock.code}\n\`\`\``
+      : text.trim();
 
     const payload = {
-      text: text.trim(),
+      text: finalText,
       image: imagePreview,
       quote: replyingTo ? { sender: replyingTo.sender, text: replyingTo.text } : null,
       attachment: pendingAttachment?.fileUrl || null,
       mediaType: pendingAttachment?.type || (imagePreview ? 'image' : null),
-      fileName: pendingAttachment?.fileName || null,
-      fileSize: pendingAttachment?.fileSize || null,
+      fileName: pendingAttachment?.fileName || imageMeta?.fileName || null,
+      fileSize: pendingAttachment?.fileSize || imageMeta?.fileSize || null,
+      fileExt: pendingAttachment?.fileExt || imageMeta?.fileExt || null,
+      isUncompressed: Boolean(pendingAttachment || imageMeta),
     };
 
     onSendMessage(payload);
     setText('');
     setImagePreview(null);
+    setImageMeta(null);
     setPendingAttachment(null);
+    setPendingCodeBlock(null);
     if (onCancelReply) onCancelReply();
   };
 
@@ -262,62 +264,76 @@ export default function Composer({
     }
   };
 
-  // File Upload Handlers
+  // High-Resolution Uncompressed Photo / Video Upload
   const handlePhotoVideoChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
       setImagePreview(url);
+      setImageMeta({
+        fileName: file.name,
+        fileSize: formatExactFileSize(file.size),
+        fileExt: getFileExtension(file.name),
+      });
       setShowAttachMenu(false);
     }
+    e.target.value = '';
   };
 
+  // Uncompressed File & Code (.cpp, .py, .pdf, .zip, etc.) Upload
   const handleDocumentChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
-      const sizeStr = file.size > 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.round(file.size / 1024)} KB`;
-
       setPendingAttachment({
         type: 'document',
         fileName: file.name,
-        fileSize: sizeStr,
+        fileSize: formatExactFileSize(file.size),
+        fileExt: getFileExtension(file.name),
         fileUrl: url
       });
       setShowAttachMenu(false);
     }
+    e.target.value = '';
   };
 
   const handleAudioChange = (e) => {
     const file = e.target.files?.[0];
     if (file) {
       const url = URL.createObjectURL(file);
-      const sizeStr = file.size > 1024 * 1024
-        ? `${(file.size / (1024 * 1024)).toFixed(1)} MB`
-        : `${Math.round(file.size / 1024)} KB`;
-
       setPendingAttachment({
         type: 'audio',
         fileName: file.name,
-        fileSize: sizeStr,
+        fileSize: formatExactFileSize(file.size),
+        fileExt: getFileExtension(file.name),
         fileUrl: url
       });
       setShowAttachMenu(false);
     }
+    e.target.value = '';
   };
 
-  const hasContent = text.trim().length > 0 || imagePreview || pendingAttachment;
+  const handleAttachCodeSnippet = (e) => {
+    e.preventDefault();
+    if (!codeContent.trim()) return;
+    setPendingCodeBlock({
+      language: codeLang,
+      code: codeContent.replace(/\n$/, ''),
+    });
+    setCodeContent('');
+    setShowCodeModal(false);
+  };
+
+  const hasContent = Boolean(text.trim() || imagePreview || pendingAttachment || pendingCodeBlock);
 
   return (
     <div className="p-2.5 sm:p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db]/80 dark:border-[#2a3942]/80 z-20 transition-colors relative font-sans select-none">
       
       {/* 1. Reply Banner */}
       {replyingTo && (
-        <div className="mb-2 mx-2 p-2.5 rounded-xl bg-white dark:bg-[#111b21] border-l-4 border-[#00a884] shadow-xs flex items-center justify-between text-[13px] animate-fadeIn">
+        <div className="mb-2 mx-2 p-2.5 rounded-xl bg-white dark:bg-[#111b21] border-l-4 border-[#0055ff] shadow-xs flex items-center justify-between text-[13px] animate-fadeIn">
           <div className="truncate mr-2">
-            <span className="font-semibold text-[#00a884] mr-1.5">
+            <span className="font-semibold text-[#0055ff] mr-1.5">
               Replying to {replyingTo.sender}:
             </span>
             <span className="text-[#54656f] dark:text-[#aebac1] truncate">
@@ -333,72 +349,113 @@ export default function Composer({
         </div>
       )}
 
-      {/* 2. Image / Attachment Preview Chips */}
-      {imagePreview && (
-        <div className="relative inline-block mb-2 ml-3 animate-fadeIn">
-          <img
-            src={imagePreview}
-            alt="Upload Preview"
-            className="w-16 h-16 rounded-xl object-cover ring-2 ring-[#00a884]"
-          />
-          <button
-            onClick={() => setImagePreview(null)}
-            className="absolute -top-1.5 -right-1.5 p-0.5 bg-rose-500 text-white rounded-full shadow cursor-pointer hover:bg-rose-600"
-          >
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
-
-      {pendingAttachment && (
-        <div className="relative inline-flex items-center gap-2 mb-2 ml-3 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111b21] border border-slate-200 dark:border-white/10 shadow-xs animate-fadeIn">
-          <div className="p-1.5 rounded-lg bg-[#00a884]/15 text-[#00a884]">
-            {pendingAttachment.type === 'document' ? (
-              <FileText className="w-4 h-4" />
-            ) : (
-              <Headphones className="w-4 h-4" />
+      {/* 2. Preview Chips (High-Res Image, Uncompressed File, Code Block) */}
+      <div className="flex flex-wrap items-center gap-2">
+        {imagePreview && (
+          <div className="relative inline-flex items-center gap-2 mb-2 ml-2 p-1.5 pr-7 rounded-xl bg-white dark:bg-[#111b21] border border-slate-200 dark:border-white/10 shadow-xs animate-fadeIn">
+            <img
+              src={imagePreview}
+              alt="Full-Res Preview"
+              className="w-12 h-12 rounded-lg object-cover ring-1 ring-[#00a884]"
+            />
+            {imageMeta && (
+              <div className="text-left text-[11.5px] max-w-[140px]">
+                <span className="font-semibold text-[#111b21] dark:text-white block truncate">{imageMeta.fileName}</span>
+                <span className="text-[#00a884] font-semibold">
+                  {imageMeta.fileExt} • {imageMeta.fileSize} (Full-Res)
+                </span>
+              </div>
             )}
+            <button
+              onClick={() => { setImagePreview(null); setImageMeta(null); }}
+              className="absolute top-1 right-1 p-0.5 bg-rose-500 text-white rounded-full shadow cursor-pointer hover:bg-rose-600"
+            >
+              <X className="w-3 h-3" />
+            </button>
           </div>
-          <div className="text-left text-[12.5px] max-w-[180px] truncate">
-            <span className="font-semibold text-[#111b21] dark:text-white block truncate">
-              {pendingAttachment.fileName}
-            </span>
-          </div>
-          <button
-            onClick={() => setPendingAttachment(null)}
-            className="p-1 text-[#8696a0] hover:text-rose-500 cursor-pointer ml-1"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      )}
+        )}
 
-      {/* Hidden File Inputs */}
+        {pendingAttachment && (
+          <div className="relative inline-flex items-center gap-2 mb-2 ml-2 px-3 py-1.5 rounded-xl bg-white dark:bg-[#111b21] border border-slate-200 dark:border-white/10 shadow-xs animate-fadeIn">
+            <div className="px-2 py-1 rounded-lg bg-[#0055ff]/15 text-[#0055ff] dark:text-sky-400 text-[10.5px] font-bold">
+              {pendingAttachment.fileExt || 'FILE'}
+            </div>
+            <div className="text-left text-[12px] max-w-[180px] truncate">
+              <span className="font-semibold text-[#111b21] dark:text-white block truncate">
+                {pendingAttachment.fileName}
+              </span>
+              <span className="text-[10.5px] text-[#667781] dark:text-[#8696a0]">
+                {pendingAttachment.fileSize} • Uncompressed
+              </span>
+            </div>
+            <button
+              onClick={() => setPendingAttachment(null)}
+              className="p-1 text-[#8696a0] hover:text-rose-500 cursor-pointer ml-1"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        )}
+
+        {pendingCodeBlock && (
+          <div className="relative inline-flex items-center gap-2 mb-2 ml-2 px-3 py-1.5 rounded-xl bg-[#0d1117] text-white border border-slate-700 shadow-xs animate-fadeIn">
+            <Code2 className="w-4 h-4 text-sky-400" />
+            <div className="text-left text-[12px] max-w-[200px] truncate">
+              <span className="font-bold text-sky-300 uppercase mr-1.5">{pendingCodeBlock.language}</span>
+              <span className="text-slate-300 font-mono truncate">{pendingCodeBlock.code.split('\n')[0]}</span>
+            </div>
+            <button
+              onClick={() => setPendingCodeBlock(null)}
+              className="p-0.5 text-slate-400 hover:text-rose-400 cursor-pointer ml-1"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+      </div>
+
+      {/* Hidden File Inputs (Uncompressed High-Res & Code Files Supported) */}
       <input type="file" accept="image/*,video/*" ref={photoInputRef} onChange={handlePhotoVideoChange} className="hidden" />
-      <input type="file" accept=".pdf,.doc,.docx,.txt,.ppt,.pptx,.zip" ref={docInputRef} onChange={handleDocumentChange} className="hidden" />
+      <input
+        type="file"
+        accept=".cpp,.c,.h,.py,.js,.jsx,.ts,.tsx,.sql,.java,.pdf,.zip,.rar,.doc,.docx,.txt,.ppt,.pptx,.md,.json,.csv"
+        ref={docInputRef}
+        onChange={handleDocumentChange}
+        className="hidden"
+      />
       <input type="file" accept="audio/*" ref={audioInputRef} onChange={handleAudioChange} className="hidden" />
 
-      {/* 3. COMPACT ATTACHMENT POPUP (28px icon circles, 13px labels, compact spacing) */}
+      {/* 3. COMPACT ATTACHMENT POPUP */}
       {showAttachMenu && (
         <div
           ref={attachMenuRef}
-          className="absolute bottom-14 left-2 sm:left-4 z-50 bg-white dark:bg-[#202c33] rounded-2xl shadow-xl border border-slate-200/80 dark:border-white/10 p-2 w-48 sm:w-52 animate-slideUp"
+          className="absolute bottom-14 left-2 sm:left-4 z-50 bg-white dark:bg-[#202c33] rounded-2xl shadow-xl border border-slate-200/80 dark:border-white/10 p-2 w-56 animate-slideUp"
         >
           <div className="grid grid-cols-1 gap-1">
             {[
               {
                 id: 'doc',
-                label: 'Document',
+                label: 'Code & Files (.cpp, .py, .pdf, .zip)',
                 color: 'bg-[#7f66ff]',
                 icon: FileText,
                 action: () => docInputRef.current?.click(),
               },
               {
                 id: 'photos',
-                label: 'Photos & videos',
+                label: 'Full-Res Photos & Video',
                 color: 'bg-[#007bfc]',
                 icon: ImageIcon,
                 action: () => photoInputRef.current?.click(),
+              },
+              {
+                id: 'code',
+                label: 'Formatted Code Block',
+                color: 'bg-[#0ea5e9]',
+                icon: Code2,
+                action: () => {
+                  setShowAttachMenu(false);
+                  setShowCodeModal(true);
+                },
               },
               {
                 id: 'camera',
@@ -412,14 +469,14 @@ export default function Composer({
               },
               {
                 id: 'audio',
-                label: 'Audio file',
+                label: 'Audio File',
                 color: 'bg-[#ff8000]',
                 icon: Headphones,
                 action: () => audioInputRef.current?.click(),
               },
               {
                 id: 'contact',
-                label: 'Contact card',
+                label: 'Share @username Card',
                 color: 'bg-[#029eb4]',
                 icon: User,
                 action: () => {
@@ -429,7 +486,7 @@ export default function Composer({
               },
               {
                 id: 'poll',
-                label: 'Poll',
+                label: 'Study / Batch Poll',
                 color: 'bg-[#ffb600]',
                 icon: BarChart2,
                 action: () => {
@@ -439,7 +496,7 @@ export default function Composer({
               },
               {
                 id: 'event',
-                label: 'Event',
+                label: 'OA / Mock Interview Event',
                 color: 'bg-[#a855f7]',
                 icon: Calendar,
                 action: () => {
@@ -456,12 +513,10 @@ export default function Composer({
                   onClick={opt.action}
                   className="flex items-center gap-2.5 px-2.5 py-1.5 rounded-lg hover:bg-black/5 dark:hover:bg-white/5 cursor-pointer text-left transition-colors"
                 >
-                  {/* Exactly 28px circle (w-7 h-7) */}
                   <div className={`w-7 h-7 rounded-full ${opt.color} text-white flex items-center justify-center flex-shrink-0 shadow-xs`}>
                     <Icon className="w-3.5 h-3.5 stroke-[2.2]" />
                   </div>
-                  {/* Exactly 13px label */}
-                  <span className="text-[13px] font-medium text-[#111b21] dark:text-[#e9edef]">
+                  <span className="text-[12.5px] font-medium text-[#111b21] dark:text-[#e9edef] truncate">
                     {opt.label}
                   </span>
                 </button>
@@ -552,9 +607,8 @@ export default function Composer({
         </div>
       )}
 
-      {/* 5. MAIN COMPOSER BAR & REAL RECORDING BAR */}
+      {/* 5. MAIN COMPOSER BAR */}
       {isRecording ? (
-        /* Live Recording Interface */
         <div className="flex items-center justify-between gap-3 bg-white dark:bg-[#202c33] rounded-full px-4 py-2 border border-rose-500/30 shadow-md animate-fadeIn">
           <div className="flex items-center gap-2.5">
             <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
@@ -567,7 +621,6 @@ export default function Composer({
           </div>
 
           <div className="flex items-center gap-2">
-            {/* Cancel Button */}
             <button
               type="button"
               onClick={cancelRecording}
@@ -577,7 +630,6 @@ export default function Composer({
               <Trash2 className="w-5 h-5" />
             </button>
 
-            {/* Send Recording Button */}
             <button
               type="button"
               onClick={stopAndSendRecording}
@@ -590,27 +642,9 @@ export default function Composer({
           </div>
         </div>
       ) : (
-        /* Normal Composer Bar */
-        <div className="flex items-center gap-1.5 sm:gap-2">
-          {/* Multi-Option Paperclip Button */}
-          <button
-            type="button"
-            onClick={() => {
-              setShowAttachMenu(!showAttachMenu);
-              setShowEmojiTray(false);
-            }}
-            title="Attach"
-            className={`p-2 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-              showAttachMenu
-                ? 'bg-[#00a884] text-white shadow-xs'
-                : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884] hover:bg-black/5 dark:hover:bg-white/10'
-            }`}
-          >
-            <Paperclip className="w-5 h-5" />
-          </button>
-
-          {/* Unified Input Pill Bar */}
-          <div className="flex-1 flex items-center bg-white dark:bg-[#2a3942] rounded-full px-2.5 sm:px-3 py-1 shadow-xs border border-black/5 dark:border-white/5 transition-all min-w-0">
+        <div className="flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1">
+          {/* Unified Floating Pill Input Bar */}
+          <div className="flex-1 flex items-center bg-white dark:bg-[#202c33] rounded-full px-2 sm:px-3 py-1 shadow-md border border-black/5 dark:border-white/10 transition-all min-w-0">
             {/* Emoji Toggle */}
             <button
               id="emoji-toggle-btn"
@@ -635,31 +669,72 @@ export default function Composer({
               value={text}
               onChange={(e) => setText(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder={chat?.isSelfChat ? "Save a note, link, or code snippet..." : "Message..."}
-              className="flex-1 px-2.5 py-1.5 bg-transparent text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[15px] focus:outline-none font-sans min-w-0"
+              placeholder={
+                chat?.isSelfChat
+                  ? t('vaultPlaceholder')
+                  : t('messagePlaceholder')
+              }
+              className="flex-1 px-2 py-1.5 bg-transparent text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[14px] focus:outline-none font-sans min-w-0"
             />
 
-            {/* AI Magic Wand */}
+            {/* Paperclip Button inside pill */}
+            <button
+              type="button"
+              onClick={() => {
+                setShowAttachMenu(!showAttachMenu);
+                setShowEmojiTray(false);
+              }}
+              title="Attach files, full-res images, polls..."
+              className={`p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                showAttachMenu
+                  ? 'bg-[#0055ff] text-white shadow-xs'
+                  : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#0055ff]'
+              }`}
+            >
+              <Paperclip className="w-[18px] h-[18px]" />
+            </button>
+
+            {/* Camera Trigger inside pill */}
+            <button
+              type="button"
+              onClick={() => setShowCameraModal(true)}
+              title="Camera Photo"
+              className="p-1.5 text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884] transition-colors rounded-full cursor-pointer flex-shrink-0"
+            >
+              <Camera className="w-[18px] h-[18px]" />
+            </button>
+
+            {/* Code Snippet Composer Trigger */}
+            <button
+              type="button"
+              onClick={() => setShowCodeModal(true)}
+              title="Insert Formatted Code Snippet (C++, Python, JS, SQL)"
+              className="hidden sm:inline-flex p-1.5 text-[#54656f] dark:text-[#8696a0] hover:text-[#0055ff] dark:hover:text-sky-400 transition-colors rounded-full cursor-pointer flex-shrink-0"
+            >
+              <Code2 className="w-[18px] h-[18px]" />
+            </button>
+
+            {/* AI Placement Assistant Magic Wand */}
             <button
               type="button"
               onClick={() => setShowToneModal(true)}
-              title="AI Tone Rewrite & Translate"
-              className="p-1.5 text-[#00a884] dark:text-[#25d366] hover:scale-110 transition-transform relative cursor-pointer flex-shrink-0"
+              title="AI Placement Assistant (Explain Code, Interview Answer, Rewrite)"
+              className="p-1.5 text-[#0055ff] dark:text-sky-400 hover:scale-110 transition-transform relative cursor-pointer flex-shrink-0"
             >
-              <Wand2 className="w-5 h-5" />
-              <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-            </button>
-
-            {/* Schedule Message */}
-            <button
-              type="button"
-              onClick={() => setShowScheduleModal(true)}
-              title="Schedule Message"
-              className="p-1.5 text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884] transition-colors rounded-full cursor-pointer flex-shrink-0"
-            >
-              <Clock className="w-5 h-5" />
+              <Wand2 className="w-[18px] h-[18px]" />
+              <span className="absolute top-1 right-1 w-1.5 h-1.5 rounded-full bg-[#7b2cbf] animate-pulse" />
             </button>
           </div>
+
+          {/* Schedule Message Clock Icon */}
+          <button
+            type="button"
+            onClick={() => setShowScheduleModal(true)}
+            title="Schedule Message (Date & Time Picker)"
+            className="hidden sm:flex w-9 h-9 sm:w-10 sm:h-10 rounded-full bg-white dark:bg-[#202c33] hover:bg-[#0055ff]/10 text-[#54656f] dark:text-[#aebac1] hover:text-[#0055ff] dark:hover:text-sky-400 items-center justify-center shadow-md border border-black/5 dark:border-white/10 transition-all cursor-pointer flex-shrink-0"
+          >
+            <Clock className="w-4 h-4" />
+          </button>
 
           {/* Send Button or Real Mic Recording Trigger */}
           {hasContent ? (
@@ -667,7 +742,7 @@ export default function Composer({
               type="button"
               onClick={handleSend}
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-md shadow-[#00a884]/25 transition-all transform active:scale-95 cursor-pointer flex-shrink-0"
-              title="Send message"
+              title={t('send')}
             >
               <Send className="w-5 h-5 ml-0.5" />
             </button>
@@ -676,7 +751,7 @@ export default function Composer({
               type="button"
               onClick={startRecording}
               className="w-10 h-10 sm:w-11 sm:h-11 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-md shadow-[#00a884]/25 transition-all transform active:scale-95 cursor-pointer flex-shrink-0"
-              title="Record voice note (Click to start recording)"
+              title="Record voice note"
             >
               <Mic className="w-5 h-5" />
             </button>
@@ -684,10 +759,87 @@ export default function Composer({
         </div>
       )}
 
+      {/* Code Block Input Modal */}
+      {showCodeModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-fadeIn">
+          <div className="w-full max-w-lg bg-white dark:bg-[#202c33] rounded-2xl p-5 shadow-2xl border border-slate-200 dark:border-white/10">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-200 dark:border-white/10">
+              <div className="flex items-center gap-2">
+                <div className="p-2 rounded-xl bg-[#0055ff] text-white">
+                  <Code2 className="w-4 h-4" />
+                </div>
+                <div>
+                  <h3 className="text-[16px] font-bold text-[#111b21] dark:text-white">
+                    Attach Syntax-Highlighted Code
+                  </h3>
+                  <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">
+                    Supports C++, Python, JavaScript, and SQL
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowCodeModal(false)}
+                className="p-1 text-[#8696a0] hover:text-[#111b21] dark:hover:text-white cursor-pointer"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleAttachCodeSnippet} className="mt-4 space-y-3.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                {CODE_LANGUAGES.map((lang) => (
+                  <button
+                    key={lang.id}
+                    type="button"
+                    onClick={() => setCodeLang(lang.id)}
+                    className={`px-3 py-1 rounded-full text-[12px] font-semibold cursor-pointer transition-all ${
+                      codeLang === lang.id
+                        ? 'bg-[#0055ff] text-white shadow-xs'
+                        : 'bg-[#f0f2f5] dark:bg-[#111b21] text-[#54656f] dark:text-[#aebac1]'
+                    }`}
+                  >
+                    {lang.label}
+                  </button>
+                ))}
+              </div>
+
+              <textarea
+                rows={7}
+                autoFocus
+                required
+                value={codeContent}
+                onChange={(e) => setCodeContent(e.target.value)}
+                placeholder={`Paste your ${codeLang.toUpperCase()} solution or query here...`}
+                className="w-full p-3.5 rounded-xl bg-[#0d1117] text-[#e6edf3] font-mono text-[13px] leading-relaxed border border-slate-700 focus:border-[#0055ff] focus:outline-none"
+              />
+
+              <div className="flex items-center justify-end gap-2 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCodeModal(false)}
+                  className="px-4 py-2 rounded-xl text-[13px] text-[#667781] dark:text-[#8696a0] hover:bg-black/5 cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!codeContent.trim()}
+                  className="px-4 py-2 rounded-xl bg-[#0055ff] hover:bg-[#0044cc] disabled:opacity-40 text-white text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Check className="w-4 h-4" />
+                  <span>Attach Code Block</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* Sub-modals */}
       {showToneModal && (
         <AiToneModal
-          initialText={text}
+          initialText={text || pendingCodeBlock?.code || ''}
+          initialMode={pendingCodeBlock ? 'explain_code' : 'rewrite'}
           onApply={(rewritten) => setText(rewritten)}
           onClose={() => setShowToneModal(false)}
         />
@@ -698,10 +850,15 @@ export default function Composer({
           chat={chat}
           pendingText={text}
           pendingImage={imagePreview}
+          pendingAttachment={pendingAttachment}
+          pendingCodeBlock={pendingCodeBlock}
           onSchedule={(data) => {
             if (onScheduleMessage) onScheduleMessage(data);
             setText('');
             setImagePreview(null);
+            setImageMeta(null);
+            setPendingAttachment(null);
+            setPendingCodeBlock(null);
           }}
           onClose={() => setShowScheduleModal(false)}
         />
@@ -713,6 +870,7 @@ export default function Composer({
           onClose={() => setShowCameraModal(false)}
           onCapture={(capturedUrl) => {
             setImagePreview(capturedUrl);
+            setImageMeta({ fileName: `Camera_${Date.now()}.png`, fileSize: 'Full-Res', fileExt: 'PNG' });
             setShowCameraModal(false);
           }}
         />
@@ -744,7 +902,7 @@ export default function Composer({
         <ShareContactModal
           isOpen={showContactModal}
           onClose={() => setShowContactModal(false)}
-          onShareContact={(contactCard) => {
+          onSubmit={(contactCard) => {
             onSendMessage({ text: '', contactCard });
             setShowContactModal(false);
           }}

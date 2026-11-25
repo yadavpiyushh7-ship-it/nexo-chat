@@ -41,6 +41,8 @@ import {
 import { QRCodeSVG } from 'qrcode.react';
 import AvatarIcon from './AvatarIcon';
 import { supabase } from '../lib/supabase';
+import { BUBBLE_ACCENTS, CHAT_WALLPAPERS } from '../lib/themeUtils';
+import { GLOBAL_LANGUAGES, INDIAN_LANGUAGES, useLanguage } from '../contexts/LanguageContext';
 
 export default function SettingsDrawer({
   user,
@@ -48,18 +50,21 @@ export default function SettingsDrawer({
   onClose,
   onLogout,
   onOpenConnectedDevices,
-  onTriggerAppLock
+  onTriggerAppLock,
+  bubbleAccent = 'emerald_green',
+  chatWallpaper = 'default',
+  onChangeTheme
 }) {
   const [currentView, setCurrentView] = useState('main'); // 'main' or page id
   const [subView, setSubView] = useState(null); // for nested screens (e.g. 'security', 'privacy_about')
 
-  const [mood, setMood] = useState(() => localStorage.getItem('nexo_user_mood') || user?.mood || 'Available ✨');
+  const [mood, setMood] = useState(() => localStorage.getItem('nexo_user_mood') || user?.mood || 'Prepping DSA & System Design 💻');
   const [searchFilter, setSearchFilter] = useState('');
 
   // Profile Edit Modal State
   const [isEditProfileOpen, setIsEditProfileOpen] = useState(false);
-  const [editName, setEditName] = useState(user?.name || 'Alex Morgan');
-  const [editUsername, setEditUsername] = useState(user?.username || '@alex_m');
+  const [editName, setEditName] = useState(user?.name || 'Piyush Yadav');
+  const [editUsername, setEditUsername] = useState(user?.username || '@piyush_dev');
   const [editMood, setEditMood] = useState(mood);
   const [editAvatar, setEditAvatar] = useState(user?.avatar || null);
   const [profileSuccessToast, setProfileSuccessToast] = useState('');
@@ -68,8 +73,8 @@ export default function SettingsDrawer({
   // Sync edits when user prop changes
   useEffect(() => {
     if (user) {
-      setEditName(user.name || 'Alex Morgan');
-      setEditUsername(user.username || '@alex_m');
+      setEditName(user.name || 'Piyush Yadav');
+      setEditUsername(user.username || '@piyush_dev');
       setEditAvatar(user.avatar || null);
       if (user.mood) setMood(user.mood);
     }
@@ -101,39 +106,12 @@ export default function SettingsDrawer({
   // Security notification toggle
   const [securityNotifs, setSecurityNotifs] = useState(true);
 
-  // Appearance State (Live Theme CSS Variables)
-  const [bubbleColor, setBubbleColor] = useState(() => localStorage.getItem('nexo_bubble_theme') || 'emerald');
-
-  const applyBubbleTheme = (themeId) => {
-    setBubbleColor(themeId);
-    try {
-      localStorage.setItem('nexo_bubble_theme', themeId);
-    } catch {}
-
-    const isDark = document.documentElement.classList.contains('dark');
-    const root = document.documentElement;
-
-    if (themeId === 'emerald') {
-      root.style.setProperty('--outgoing-bubble-bg', isDark ? '#005c4b' : '#d9fdd3');
-      root.style.setProperty('--outgoing-bubble-text', isDark ? '#e9edef' : '#111b21');
-    } else if (themeId === 'nexo') {
-      root.style.setProperty('--outgoing-bubble-bg', 'linear-gradient(135deg, #0055ff, #7b2cbf, #d946ef)');
-      root.style.setProperty('--outgoing-bubble-text', '#ffffff');
-    } else if (themeId === 'royal') {
-      root.style.setProperty('--outgoing-bubble-bg', isDark ? '#003cd6' : '#0044ff');
-      root.style.setProperty('--outgoing-bubble-text', '#ffffff');
-    } else if (themeId === 'amethyst') {
-      root.style.setProperty('--outgoing-bubble-bg', isDark ? '#6a1b9a' : '#7b2cbf');
-      root.style.setProperty('--outgoing-bubble-text', '#ffffff');
-    } else if (themeId === 'rose') {
-      root.style.setProperty('--outgoing-bubble-bg', isDark ? '#e11d48' : '#f43f5e');
-      root.style.setProperty('--outgoing-bubble-text', '#ffffff');
+  // Appearance State handled cleanly via themeUtils & parent App state
+  const applyBubbleTheme = (accentId, wpId = chatWallpaper) => {
+    if (onChangeTheme) {
+      onChangeTheme(accentId, wpId);
     }
   };
-
-  useEffect(() => {
-    applyBubbleTheme(bubbleColor);
-  }, []);
 
   // Chats Settings State
   const [enterIsSend, setEnterIsSend] = useState(true);
@@ -235,10 +213,10 @@ export default function SettingsDrawer({
     const cleanHandle = editUsername.startsWith('@') ? editUsername : `@${editUsername}`;
     const updatedUser = {
       ...user,
-      name: editName.trim() || 'Alex Morgan',
+      name: editName.trim() || 'Piyush Yadav',
       username: cleanHandle,
       avatar: editAvatar,
-      mood: editMood.trim() || 'Available ✨'
+      mood: editMood.trim() || 'Prepping DSA & System Design 💻'
     };
 
     setMood(updatedUser.mood);
@@ -252,9 +230,9 @@ export default function SettingsDrawer({
       supabase.from('profiles').upsert({
         id: user.id,
         username: cleanHandle,
-        full_name: editName.trim() || 'Alex Morgan',
+        full_name: editName.trim() || 'Piyush Yadav',
         avatar_url: editAvatar,
-        mood: editMood.trim() || 'Available ✨',
+        mood: editMood.trim() || 'Prepping DSA & System Design 💻',
         updated_at: new Date().toISOString()
       }).then(({ error }) => {
         if (error) console.warn('Supabase profile update warning:', error);
@@ -270,8 +248,8 @@ export default function SettingsDrawer({
     setIsEditProfileOpen(false);
   };
 
-  // Language State
-  const [selectedLanguage, setSelectedLanguage] = useState('en');
+  // Language State (Reactive Multi-Language Pack)
+  const { language: selectedLanguage, setLanguage: setSelectedLanguage, t, currentLanguageObj } = useLanguage();
 
   // Contact Us & Feedback State
   const [feedbackSubject, setFeedbackSubject] = useState('');
@@ -285,9 +263,10 @@ export default function SettingsDrawer({
       version: '2.4.0',
       exportDate: new Date().toISOString(),
       user: {
-        name: user?.name || 'Alex Morgan',
-        username: user?.username || '@alex_m',
-        email: user?.email || 'alex@nexo.chat',
+        name: user?.name || 'Piyush Yadav',
+        username: user?.username || '@piyush_dev',
+        program: user?.program || 'B.Tech CSE (AI & ML)',
+        university: user?.university || 'JECRC University',
       },
       privacySettings: {
         lastSeen,
@@ -349,7 +328,7 @@ export default function SettingsDrawer({
     { id: 'broadcasts', label: 'Broadcasts', icon: Megaphone, desc: 'Manage broadcast distribution lists' },
     { id: 'notifications', label: 'Notifications', icon: Bell, desc: 'Message, group & call alerts' },
     { id: 'storage', label: 'Storage and data', icon: Database, desc: 'Network usage, cache management' },
-    { id: 'language', label: 'App language', icon: Globe, desc: 'English (phone language)' },
+    { id: 'language', label: t('appLanguage') || 'App language', icon: Globe, desc: `${currentLanguageObj?.name || 'English (US)'} • 31 languages` },
     { id: 'help', label: 'Help and feedback', icon: HelpCircle, desc: 'Help center, terms, contact us' },
   ];
 
@@ -477,12 +456,15 @@ export default function SettingsDrawer({
             >
               <div className="flex items-center justify-center gap-1.5">
                 <h2 className="text-[20px] font-bold text-[#111b21] dark:text-white tracking-tight group-hover:text-[#00a884] transition-colors">
-                  {user?.name || 'Alex Morgan'}
+                  {user?.name || 'Piyush Yadav'}
                 </h2>
                 <Edit3 className="w-3.5 h-3.5 text-[#8696a0] opacity-0 group-hover:opacity-100 transition-opacity" />
               </div>
-              <p className="text-[13px] text-[#00a884] dark:text-[#25d366] font-semibold mt-0.5">
-                {user?.username || '@alex_m'}
+              <p className="text-[13px] text-[#0055ff] dark:text-sky-400 font-semibold mt-0.5">
+                {user?.username || '@piyush_dev'}
+              </p>
+              <p className="text-[11.5px] text-[#667781] dark:text-[#8696a0] mt-0.5">
+                {user?.program || 'B.Tech CSE (AI & ML)'} • {user?.university || 'JECRC University'}
               </p>
             </div>
           </div>
@@ -543,17 +525,17 @@ export default function SettingsDrawer({
               );
             })}
 
-            {/* Log Out Row */}
+            {/* Reset Workspace Row */}
             <div
               onClick={onLogout}
               className="flex items-center justify-between px-4 py-3.5 hover:bg-rose-50 dark:hover:bg-rose-500/10 cursor-pointer transition-colors"
             >
               <div className="flex items-center gap-3.5">
                 <div className="p-2 rounded-xl bg-rose-50 dark:bg-rose-500/15 text-rose-600 dark:text-rose-400">
-                  <LogOut className="w-5 h-5" />
+                  <RefreshCw className="w-5 h-5" />
                 </div>
                 <span className="text-[14.5px] font-semibold text-rose-600 dark:text-rose-400">
-                  Log out
+                  Reset Campus Workspace
                 </span>
               </div>
               <ChevronRight className="w-4 h-4 text-rose-400" />
@@ -576,11 +558,11 @@ export default function SettingsDrawer({
                   name={user?.name || 'Alex Morgan'}
                 />
               </div>
-              <h4 className="text-[17px] font-bold text-[#111b21]">{user?.name || 'Alex Morgan'}</h4>
-              <p className="text-[12.5px] text-[#00a884] font-semibold mb-4">{user?.username || '@alex_m'}</p>
+              <h4 className="text-[17px] font-bold text-[#111b21]">{user?.name || 'Piyush Yadav'}</h4>
+              <p className="text-[12.5px] text-[#00a884] font-semibold mb-4">{user?.username || '@piyush_dev'}</p>
 
               <QRCodeSVG
-                value={`${typeof window !== 'undefined' ? window.location.origin : 'https://nexo.chat'}/?contact=${encodeURIComponent(user?.username || '@alex_m')}`}
+                value={`${typeof window !== 'undefined' ? window.location.origin : 'https://nexo.chat'}/?contact=${encodeURIComponent(user?.username || '@piyush_dev')}`}
                 size={190}
                 level="H"
                 imageSettings={{
@@ -1176,46 +1158,73 @@ export default function SettingsDrawer({
       )}
 
       {/* ============================================================== */}
-      {/* 6. APPEARANCE SUB-PAGE (Live Theme CSS Variables)              */}
+      {/* 6. APPEARANCE SUB-PAGE (Custom Chat Themes & Wallpapers)       */}
       {/* ============================================================== */}
       {currentView === 'appearance' && (
         <div className="w-full h-full flex flex-col">
-          {renderSubHeader('Appearance', () => setCurrentView('main'))}
+          {renderSubHeader('Appearance & Themes', () => setCurrentView('main'))}
           <div className="flex-1 overflow-y-auto p-5 space-y-6">
             <div>
               <h4 className="text-[15px] font-bold text-[#111b21] dark:text-white mb-1">
-                Chat Bubble Accent Color
+                Bubble Accent Color
               </h4>
-              <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0] mb-4">
-                Click any accent to immediately update all outgoing chat bubbles across the app.
+              <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0] mb-3.5">
+                Switch bubble accent colors independently of Light / Dark mode.
               </p>
 
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  { id: 'emerald', label: 'Classic Emerald', color: '#00a884' },
-                  { id: 'nexo', label: 'Nexo Gradient', gradient: 'from-[#0055ff] via-[#7b2cbf] to-[#d946ef]' },
-                  { id: 'royal', label: 'Royal Blue', color: '#0044ff' },
-                  { id: 'amethyst', label: 'Amethyst Violet', color: '#7b2cbf' },
-                  { id: 'rose', label: 'Sunset Rose', color: '#f43f5e' },
-                ].map((item) => (
+              <div className="grid grid-cols-2 gap-2.5">
+                {BUBBLE_ACCENTS.map((item) => (
                   <button
                     key={item.id}
-                    onClick={() => applyBubbleTheme(item.id)}
-                    className={`p-3 rounded-2xl border flex items-center gap-3 text-left cursor-pointer transition-all ${
-                      bubbleColor === item.id
-                        ? 'border-[#00a884] ring-2 ring-[#00a884]/30 bg-[#00a884]/5'
+                    type="button"
+                    onClick={() => applyBubbleTheme(item.id, chatWallpaper)}
+                    className={`p-3 rounded-2xl border flex items-center gap-2.5 text-left cursor-pointer transition-all ${
+                      bubbleAccent === item.id
+                        ? 'border-[#0055ff] ring-2 ring-[#0055ff]/30 bg-[#0055ff]/5'
                         : 'border-slate-200 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
                     }`}
                   >
                     <span
-                      className={`w-6 h-6 rounded-full flex-shrink-0 ${
-                        item.gradient ? `bg-gradient-to-r ${item.gradient}` : ''
-                      }`}
-                      style={{ backgroundColor: item.color }}
+                      className="w-5 h-5 rounded-full flex-shrink-0 shadow-xs"
+                      style={{ backgroundColor: item.swatch }}
                     />
-                    <span className="text-[13px] font-semibold text-[#111b21] dark:text-white">
+                    <span className="text-[12.5px] font-semibold text-[#111b21] dark:text-white truncate">
                       {item.label}
                     </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div>
+              <h4 className="text-[15px] font-bold text-[#111b21] dark:text-white mb-1">
+                Chat Wallpaper
+              </h4>
+              <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0] mb-3">
+                Personalize your conversation background canvas.
+              </p>
+
+              <div className="space-y-2">
+                {CHAT_WALLPAPERS.map((wp) => (
+                  <button
+                    key={wp.id}
+                    type="button"
+                    onClick={() => applyBubbleTheme(bubbleAccent, wp.id)}
+                    className={`w-full p-3 rounded-xl border flex items-center justify-between text-left cursor-pointer transition-all ${
+                      chatWallpaper === wp.id
+                        ? 'border-[#0055ff] bg-[#0055ff]/10'
+                        : 'border-slate-200 dark:border-white/10 hover:bg-black/5 dark:hover:bg-white/5'
+                    }`}
+                  >
+                    <div>
+                      <span className="text-[13.5px] font-semibold text-[#111b21] dark:text-white block">
+                        {wp.label}
+                      </span>
+                      <span className="text-[11.5px] text-[#667781] dark:text-[#8696a0]">
+                        {wp.desc}
+                      </span>
+                    </div>
+                    {chatWallpaper === wp.id && <Check className="w-4 h-4 text-[#0055ff]" />}
                   </button>
                 ))}
               </div>
@@ -1225,13 +1234,13 @@ export default function SettingsDrawer({
               <h5 className="text-[13.5px] font-bold text-[#111b21] dark:text-white">Live Preview</h5>
               <div className="p-3 rounded-xl bg-white dark:bg-[#111b21] flex justify-end">
                 <div
-                  className="px-3.5 py-2 rounded-2xl rounded-tr-none text-[14px] shadow-sm font-medium"
+                  className="px-3.5 py-2 rounded-2xl rounded-tr-none text-[13.5px] shadow-sm font-medium"
                   style={{
                     background: 'var(--outgoing-bubble-bg, #d9fdd3)',
                     color: 'var(--outgoing-bubble-text, #111b21)'
                   }}
                 >
-                  This is how your outgoing messages look! ✨
+                  Solved Kadane&apos;s Algorithm in O(N) time! 💻
                 </div>
               </div>
             </div>
@@ -1365,33 +1374,64 @@ export default function SettingsDrawer({
       )}
 
       {/* ============================================================== */}
-      {/* 10. APP LANGUAGE SUB-PAGE                                      */}
+      {/* 10. APP LANGUAGE SUB-PAGE (Global 22 + Indian 9 Live i18n)     */}
       {/* ============================================================== */}
       {currentView === 'language' && (
         <div className="w-full h-full flex flex-col">
-          {renderSubHeader('App language', () => setCurrentView('main'))}
-          <div className="flex-1 overflow-y-auto divide-y divide-[#d1d7db]/30 dark:divide-[#2a3942]/40">
-            {[
-              { id: 'en', name: 'English (US)', sub: 'Default' },
-              { id: 'hi', name: 'हिन्दी (Hindi)', sub: 'हिंदी' },
-              { id: 'es', name: 'Español (Spanish)', sub: 'Español' },
-              { id: 'fr', name: 'Français (French)', sub: 'Français' },
-              { id: 'de', name: 'Deutsch (German)', sub: 'Deutsch' },
-            ].map((lang) => (
-              <div
-                key={lang.id}
-                onClick={() => setSelectedLanguage(lang.id)}
-                className="flex items-center justify-between px-5 py-3.5 hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/60 cursor-pointer transition-colors"
-              >
-                <div>
-                  <h5 className="text-[14.5px] font-semibold text-[#111b21] dark:text-white">{lang.name}</h5>
-                  <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">{lang.sub}</p>
+          {renderSubHeader(`${t('appLanguage') || 'App language'} (${GLOBAL_LANGUAGES.length + INDIAN_LANGUAGES.length})`, () => setCurrentView('main'))}
+          <div className="flex-1 overflow-y-auto pb-8">
+            <div className="px-5 py-2.5 bg-[#f0f2f5] dark:bg-[#111b21] border-b border-[#d1d7db]/40 dark:border-[#2a3942]/60 sticky top-0 z-10">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#00a884]">
+                Indian Languages ({INDIAN_LANGUAGES.length})
+              </span>
+            </div>
+            <div className="divide-y divide-[#d1d7db]/30 dark:divide-[#2a3942]/40">
+              {INDIAN_LANGUAGES.map((lang) => (
+                <div
+                  key={lang.code}
+                  onClick={() => setSelectedLanguage(lang.code)}
+                  className="flex items-center justify-between px-5 py-3 hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/60 cursor-pointer transition-colors"
+                >
+                  <div>
+                    <h5 className="text-[14px] font-semibold text-[#111b21] dark:text-white">{lang.name}</h5>
+                    <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">{lang.native}</p>
+                  </div>
+                  {selectedLanguage === lang.code && (
+                    <Check className="w-5 h-5 text-[#00a884] flex-shrink-0" />
+                  )}
                 </div>
-                {selectedLanguage === lang.id && (
-                  <Check className="w-5 h-5 text-[#00a884]" />
-                )}
-              </div>
-            ))}
+              ))}
+            </div>
+
+            <div className="px-5 py-2.5 bg-[#f0f2f5] dark:bg-[#111b21] border-y border-[#d1d7db]/40 dark:border-[#2a3942]/60 sticky top-0 z-10">
+              <span className="text-[11px] font-bold uppercase tracking-wider text-[#0055ff] dark:text-sky-400">
+                Global Languages ({GLOBAL_LANGUAGES.length})
+              </span>
+            </div>
+            <div className="divide-y divide-[#d1d7db]/30 dark:divide-[#2a3942]/40">
+              {GLOBAL_LANGUAGES.map((lang) => (
+                <div
+                  key={lang.code}
+                  onClick={() => setSelectedLanguage(lang.code)}
+                  className="flex items-center justify-between px-5 py-3 hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/60 cursor-pointer transition-colors"
+                >
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <h5 className="text-[14px] font-semibold text-[#111b21] dark:text-white">{lang.name}</h5>
+                      {lang.rtl && (
+                        <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-600 dark:text-amber-400">
+                          RTL
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">{lang.native}</p>
+                  </div>
+                  {selectedLanguage === lang.code && (
+                    <Check className="w-5 h-5 text-[#00a884] flex-shrink-0" />
+                  )}
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
@@ -1613,7 +1653,7 @@ export default function SettingsDrawer({
               <div className="flex flex-col items-center justify-center">
                 <AvatarIcon
                   size="xl"
-                  name={editName || user?.name || 'Alex Morgan'}
+                  name={editName || user?.name || 'Piyush Yadav'}
                 />
                 <p className="mt-2 text-[12px] font-medium text-[#8696a0]">
                   Monochrome Silhouette Profile
@@ -1630,11 +1670,11 @@ export default function SettingsDrawer({
                   required
                   value={editName}
                   onChange={(e) => setEditName(e.target.value)}
-                  placeholder="e.g. Alex Morgan"
+                  placeholder="e.g. Piyush Yadav"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-transparent focus:border-[#00a884] focus:bg-white dark:focus:bg-[#111b21] text-[14px] text-[#111b21] dark:text-white focus:outline-none transition-all"
                 />
                 <p className="text-[11.5px] text-[#8696a0] mt-1">
-                  This is the name visible to your contacts and inside your Self-Chat.
+                  This is the name visible to your peers and Study Vault.
                 </p>
               </div>
 
@@ -1648,11 +1688,11 @@ export default function SettingsDrawer({
                   required
                   value={editUsername}
                   onChange={(e) => setEditUsername(e.target.value)}
-                  placeholder="e.g. @alex_m"
+                  placeholder="e.g. @piyush_dev"
                   className="w-full px-3.5 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-transparent focus:border-[#00a884] focus:bg-white dark:focus:bg-[#111b21] text-[14px] text-[#111b21] dark:text-white focus:outline-none transition-all"
                 />
                 <p className="text-[11.5px] text-[#8696a0] mt-1">
-                  Used by friends to search and find you on Nexo.
+                  Privacy-first search handle — phone numbers stay hidden.
                 </p>
               </div>
 

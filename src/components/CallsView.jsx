@@ -1,41 +1,33 @@
 import React, { useState } from 'react';
-import { Phone, Video, PhoneIncoming, PhoneOutgoing, PhoneMissed, Link, Plus, Check } from 'lucide-react';
+import { Phone, Video, PhoneIncoming, PhoneOutgoing, PhoneMissed, Link, Plus, Check, ExternalLink, FileText } from 'lucide-react';
 import AvatarIcon from './AvatarIcon';
 
-export default function CallsView({ onStartCall }) {
+export default function CallsView({ user, onStartCall, onOpenMeetAndMoM }) {
   const [copiedLink, setCopiedLink] = useState(false);
-  const [callLogs, setCallLogs] = useState([
+  const [callLogs] = useState([
     {
-      id: 'c1',
-      name: 'Jordan Lee',
-      handle: '@jordan_l',
+      id: 'c_bot',
+      name: 'Placement Bot',
+      handle: '@placement_bot',
       type: 'video',
-      direction: 'incoming',
-      time: 'Yesterday, 8:45 pm',
-      missed: false
-    },
-    {
-      id: 'c2',
-      name: 'Marcus Vance',
-      handle: '@marcus_v',
-      type: 'voice',
       direction: 'outgoing',
-      time: 'Wednesday, 2:10 pm',
+      time: 'Mock HR & DSA Practice Ready',
       missed: false
     },
     {
-      id: 'c3',
-      name: 'Elena Rostova',
-      handle: '@elena_r',
+      id: 'c_dsa',
+      name: 'DSA & Coding Prep Squad',
+      handle: '@dsa_prep_2027',
       type: 'video',
       direction: 'incoming',
-      time: '18 Nov, 11:20 am',
-      missed: true
+      time: 'Live Study Room',
+      missed: false
     }
   ]);
 
   const handleCreateCallLink = () => {
-    const link = `https://nexo.chat/call/${Math.random().toString(36).substring(7)}`;
+    const handle = user?.username || '@piyush_dev';
+    const link = `https://nexo-chat-pi.vercel.app/?connect=${encodeURIComponent(handle)}`;
     navigator.clipboard?.writeText(link);
     setCopiedLink(true);
     setTimeout(() => setCopiedLink(false), 3000);
@@ -43,52 +35,85 @@ export default function CallsView({ onStartCall }) {
 
   return (
     <div className="flex-1 h-full flex bg-[#f0f2f5] dark:bg-[#0c1317] select-none font-sans overflow-hidden">
-      {/* Left Calls List Pane */}
       <div className="w-full md:w-[360px] lg:w-[400px] h-full flex flex-col bg-white dark:bg-[#111b21] border-r border-[#d1d7db] dark:border-[#2a3942] flex-shrink-0">
         <div className="h-[60px] px-4 flex items-center justify-between border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 bg-[#f0f2f5] dark:bg-[#202c33] flex-shrink-0">
           <h2 className="text-[17px] font-medium text-[#111b21] dark:text-white">
-            Calls
+            Mock Interview & Peer Calls
           </h2>
           <button
             onClick={() => {
               onStartCall({
                 contact: {
-                  name: 'Jordan Lee',
-                  handle: '@jordan_l'
+                  name: 'Placement Bot',
+                  handle: '@placement_bot'
                 },
-                type: 'voice'
+                type: 'video'
               });
             }}
-            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#00a884] cursor-pointer"
-            title="Start new call"
+            className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#0055ff] cursor-pointer"
+            title="Start mock interview call"
           >
             <Plus className="w-5 h-5" />
           </button>
         </div>
 
-        <div className="flex-1 overflow-y-auto divide-y divide-[#d1d7db]/20 dark:divide-[#2a3942]/30">
-          {/* Create Call Link Row */}
+        <div className="flex-1 overflow-y-auto divide-y divide-[#d1d7db]/20 dark:divide-[#2a3942]/30 pb-20 md:pb-4">
+          {/* Prominent Google Meet & AI MoM Top Banner */}
+          <div className="p-3.5 bg-gradient-to-r from-[#0055ff]/10 via-[#00a884]/10 to-emerald-500/10 border-b border-[#0055ff]/20 space-y-2.5">
+            <div className="flex items-center gap-2.5">
+              <div className="w-9 h-9 rounded-xl bg-emerald-600 text-white flex items-center justify-center flex-shrink-0 shadow-xs">
+                <Video className="w-4.5 h-4.5" />
+              </div>
+              <div className="min-w-0">
+                <h4 className="text-[14px] font-bold text-[#111b21] dark:text-white leading-tight">
+                  Start / Schedule Google Meet & AI MoM
+                </h4>
+                <p className="text-[11.5px] text-[#667781] dark:text-[#8696a0]">
+                  Instant meeting link & automated Minutes of Meeting
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <a
+                href="https://meet.google.com/new"
+                target="_blank"
+                rel="noreferrer"
+                className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold flex items-center justify-center gap-1.5 shadow-xs"
+              >
+                <ExternalLink className="w-3.5 h-3.5" />
+                <span>Create Instant Meet</span>
+              </a>
+              <button
+                type="button"
+                onClick={() => onOpenMeetAndMoM?.()}
+                className="flex-1 py-2 px-3 rounded-xl bg-[#0055ff] hover:bg-[#0044cc] text-white text-[12px] font-bold flex items-center justify-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <FileText className="w-3.5 h-3.5" />
+                <span>Meet & AI MoM</span>
+              </button>
+            </div>
+          </div>
+
           <div
             onClick={handleCreateCallLink}
             className="flex items-center gap-3.5 p-4 hover:bg-[#f5f6f6] dark:hover:bg-[#202c33]/50 cursor-pointer transition-colors"
           >
-            <div className="w-12 h-12 rounded-full bg-[#00a884] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
+            <div className="w-12 h-12 rounded-full bg-[#0055ff] text-white flex items-center justify-center flex-shrink-0 shadow-sm">
               {copiedLink ? <Check className="w-5 h-5" /> : <Link className="w-5 h-5" />}
             </div>
             <div className="flex-1 min-w-0">
               <h4 className="text-[15.5px] font-semibold text-[#111b21] dark:text-white">
-                {copiedLink ? 'Link copied to clipboard!' : 'Create call link'}
+                {copiedLink ? 'Mock call link copied!' : 'Create mock interview link'}
               </h4>
               <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0]">
-                {copiedLink ? 'Share with anyone to join your Nexo call' : 'Share a link for your Nexo call'}
+                {copiedLink ? 'Share with peers via @username' : 'Invite CSE peers for pair coding or HR practice'}
               </p>
             </div>
           </div>
 
-          {/* Recent Calls Section */}
           <div className="p-3">
             <span className="text-[12px] font-bold uppercase tracking-wider text-[#667781] dark:text-[#8696a0] px-1 block mb-2">
-              Recent
+              Recent Peer Calls
             </span>
 
             <div className="space-y-1">
@@ -103,7 +128,7 @@ export default function CallsView({ onStartCall }) {
                       <h4 className={`text-[15px] font-semibold truncate ${
                         log.missed ? 'text-rose-500' : 'text-[#111b21] dark:text-[#e9edef]'
                       }`}>
-                        {log.name}
+                        {log.name} <span className="text-[12px] font-normal text-[#0055ff]">{log.handle}</span>
                       </h4>
                       <div className="flex items-center gap-1.5 text-[12px] text-[#667781] dark:text-[#8696a0]">
                         {log.missed ? (
@@ -123,7 +148,7 @@ export default function CallsView({ onStartCall }) {
                       contact: { name: log.name, handle: log.handle },
                       type: log.type
                     })}
-                    className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#00a884] cursor-pointer"
+                    className="p-2 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#0055ff] cursor-pointer"
                     title={`Call ${log.name}`}
                   >
                     {log.type === 'video' ? <Video className="w-5 h-5" /> : <Phone className="w-5 h-5" />}
@@ -135,17 +160,16 @@ export default function CallsView({ onStartCall }) {
         </div>
       </div>
 
-      {/* Right Stage for Desktop */}
       <div className="hidden md:flex flex-1 h-full items-center justify-center p-8 bg-[#efeae2]/30 dark:bg-[#0b141a] text-center text-[#8696a0]">
         <div>
-          <div className="w-16 h-16 rounded-full bg-[#00a884]/15 text-[#00a884] flex items-center justify-center mx-auto mb-3">
+          <div className="w-16 h-16 rounded-full bg-[#0055ff]/15 text-[#0055ff] flex items-center justify-center mx-auto mb-3">
             <Phone className="w-8 h-8" />
           </div>
           <h3 className="text-[18px] font-bold text-[#111b21] dark:text-white">
-            Nexo Calls
+            Peer Coding & Mock Interviews
           </h3>
           <p className="text-[13.5px] max-w-xs mx-auto mt-1">
-            Make high-definition encrypted voice and video calls with anyone on Nexo.
+            Encrypted HD audio and video calls via @username without exposing personal phone numbers.
           </p>
         </div>
       </div>

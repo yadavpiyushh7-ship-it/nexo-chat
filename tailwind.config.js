@@ -9,11 +9,8 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          'Google Sans',
-          '-apple-system',
-          'BlinkMacSystemFont',
-          'Segoe UI',
-          'Plus Jakarta Sans',
+          'Arial',
+          'Helvetica',
           'sans-serif'
         ],
       },

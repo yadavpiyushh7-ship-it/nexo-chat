@@ -1,11 +1,35 @@
 import { defineConfig, loadEnv } from 'vite';
 import react from '@vitejs/plugin-react';
 import aiHandler from './api/ai.js';
+import youtubeHandler from './api/youtube.js';
+
+function attachExpressHelpers(req, res) {
+  res.status = (code) => {
+    res.statusCode = code;
+    return res;
+  };
+  res.json = (data) => {
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify(data));
+    return res;
+  };
+}
 
 function vercelApiDevPlugin() {
   return {
     name: 'vercel-api-dev',
     configureServer(server) {
+      server.middlewares.use('/api/youtube', async (req, res) => {
+        attachExpressHelpers(req, res);
+        try {
+          await youtubeHandler(req, res);
+        } catch (err) {
+          res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
+          res.end(JSON.stringify({ error: err.message }));
+        }
+      });
+
       server.middlewares.use('/api/ai', async (req, res) => {
         if (req.method === 'OPTIONS') {
           res.setHeader('Access-Control-Allow-Origin', '*');
@@ -24,20 +48,11 @@ function vercelApiDevPlugin() {
           req.on('end', async () => {
             try {
               req.body = JSON.parse(body || '{}');
-            } catch (e) {
+            } catch {
               req.body = {};
             }
 
-            res.status = (code) => {
-              res.statusCode = code;
-              return res;
-            };
-
-            res.json = (data) => {
-              res.setHeader('Content-Type', 'application/json');
-              res.end(JSON.stringify(data));
-              return res;
-            };
+            attachExpressHelpers(req, res);
 
             try {
               await aiHandler(req, res);
@@ -60,6 +75,9 @@ export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   if (env.GEMINI_API_KEY) {
     process.env.GEMINI_API_KEY = env.GEMINI_API_KEY;
+  }
+  if (env.VITE_YOUTUBE_API_KEY) {
+    process.env.VITE_YOUTUBE_API_KEY = env.VITE_YOUTUBE_API_KEY;
   }
 
   return {
