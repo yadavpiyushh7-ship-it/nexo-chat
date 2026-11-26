@@ -2,7 +2,7 @@ import React from 'react';
 import { Settings, Briefcase, Code2, Youtube } from 'lucide-react';
 import NexoLogo from './NexoLogo';
 import AvatarIcon from './AvatarIcon';
-import { ChatsIcon, UpdatesIcon, CommunitiesIcon, CallsIcon } from './WhatsAppIcons';
+import { ChatsIcon, CommunitiesIcon, CallsIcon } from './WhatsAppIcons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function NavigationRail({
@@ -20,13 +20,12 @@ export default function NavigationRail({
     { id: 'workspace', label: t('workspace'), icon: Briefcase },
     { id: 'prep', label: t('prep'), icon: Code2 },
     { id: 'youtube', label: t('youtube'), icon: Youtube },
-    { id: 'updates', label: t('updates'), icon: UpdatesIcon },
     { id: 'communities', label: t('communities'), icon: CommunitiesIcon },
     { id: 'calls', label: t('calls'), icon: CallsIcon },
   ];
 
   return (
-    <nav className="w-[72px] h-full flex flex-col items-center py-3 bg-[#f0f2f5] dark:bg-[#202c33] border-r border-[#d1d7db] dark:border-[#2a3942] select-none flex-shrink-0 z-20 transition-colors overflow-y-auto no-scrollbar">
+    <nav className="w-[72px] h-full flex flex-col items-center py-3 bg-[#f0f2f5] dark:bg-[#111b21] border-r border-[#e9edef] dark:border-[#222e35] select-none flex-shrink-0 transition-colors duration-150 z-20 overflow-y-auto no-scrollbar">
       {/* Top: Nexo Logo */}
       <div className="mb-3 flex-shrink-0">
         <button
@@ -60,7 +59,7 @@ export default function NavigationRail({
                 <Icon className="w-[21px] h-[21px]" active={isActive} />
 
                 {item.badge && item.badge > 0 ? (
-                  <span className="absolute -top-1 -right-1 px-1 min-w-[16px] h-[16px] text-[10px] font-bold rounded-full bg-[#25d366] text-[#111b21] flex items-center justify-center shadow">
+                  <span className="font-numeric absolute -top-1 -right-1 px-1 min-w-[16px] h-[16px] text-[10px] font-bold rounded-full bg-[#00a884] text-white flex items-center justify-center shadow">
                     {item.badge}
                   </span>
                 ) : null}

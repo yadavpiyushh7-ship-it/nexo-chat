@@ -73,15 +73,15 @@ export function applyThemePreferences(accentId = 'emerald_green', wallpaperId = 
 export function getWallpaperClass(wallpaperId) {
   switch (wallpaperId) {
     case 'doodle':
-      return 'whatsapp-doodle-light dark:whatsapp-doodle-dark';
+      return 'bg-[#ffffff] dark:bg-[#0b141a]';
     case 'tech_grid':
       return 'nexo-tech-grid-light dark:nexo-tech-grid-dark';
     case 'aurora_soft':
-      return 'bg-gradient-to-br from-[#eef4ff] via-[#f7f9fc] to-[#f2ecff] dark:from-[#0b141a] dark:via-[#0f1c26] dark:to-[#131426]';
+      return 'bg-[#f8fafc] dark:bg-[#0b141a]';
     case 'obsidian_slate':
-      return 'bg-[#e9edf2] dark:bg-[#090e12]';
+      return 'bg-[#f0f2f5] dark:bg-[#0b141a]';
     case 'default':
     default:
-      return 'whatsapp-doodle-light dark:whatsapp-doodle-dark';
+      return 'bg-[#ffffff] dark:bg-[#0b141a]';
   }
 }

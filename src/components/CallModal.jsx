@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   PhoneOff,
   Mic,
@@ -42,9 +42,21 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
   const remoteAudioRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
+  const [localStreamState, setLocalStreamState] = useState(null);
   const screenStreamRef = useRef(null);
   const channelRef = useRef(null);
   const deviceMenuRef = useRef(null);
+
+  const attachLocalVideoRef = useCallback(
+    (node) => {
+      localVideoRef.current = node;
+      const activeStream = screenStreamRef.current || localStreamState || localStreamRef.current;
+      if (node && activeStream && node.srcObject !== activeStream) {
+        node.srcObject = activeStream;
+      }
+    },
+    [localStreamState, isScreenSharing]
+  );
 
   const mediaRecorderRef = useRef(null);
   const recordedChunksRef = useRef([]);
@@ -103,6 +115,7 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
         }
 
         localStreamRef.current = mediaInfo.stream;
+        setLocalStreamState(mediaInfo.stream);
         setAvailableCameras(mediaInfo.cameras);
         setAvailableMics(mediaInfo.mics);
         setActiveCameraId(mediaInfo.activeCameraId);
@@ -120,7 +133,7 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
           return;
         }
 
-        channel = supabase.channel(`call-signaling-${callId}`);
+        channel = supabase.channel('nexo-call-signaling');
         channelRef.current = channel;
 
         const pc = new RTCPeerConnection({
@@ -198,11 +211,12 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
                   await pc.setLocalDescription(offer);
                   channel.send({
                     type: 'broadcast',
-                    event: 'call-offer',
+                    event: 'incoming_call',
                     payload: {
                       callId,
                       caller: currentUser,
                       recipientId: otherParty?.recipientId || otherParty?.id,
+                      recipientHandle: otherPartyHandle,
                       offer,
                       type: call.type,
                     },
@@ -462,7 +476,12 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
     if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
     if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach((t) => t.stop());
     if (pcRef.current) pcRef.current.close();
-    onEndCall();
+    onEndCall({
+      durationSeconds: callDuration,
+      type: call?.type || 'voice',
+      contact: otherParty,
+      chatId: otherParty?.id || otherParty?.recipientId || null,
+    });
   };
 
   if (!call) return null;
@@ -484,7 +503,7 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
             </span>
 
             {isRecording && (
-              <span className="ml-1 px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-mono font-bold flex items-center gap-1.5 animate-pulse shadow flex-shrink-0">
+              <span className="ml-1 px-2.5 py-0.5 rounded-full bg-rose-600 text-white text-[11px] font-numeric font-bold flex items-center gap-1.5 animate-pulse shadow flex-shrink-0">
                 <span className="w-2 h-2 rounded-full bg-white" />
                 <span>REC {formatTime(recordingSeconds)}</span>
               </span>
@@ -565,7 +584,7 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
               )}
             </div>
 
-            <span className="text-[14px] font-mono font-semibold text-slate-300">
+            <span className="text-[14px] font-numeric font-semibold text-slate-300">
               {formatTime(callDuration)}
             </span>
           </div>
@@ -577,7 +596,7 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
             <div className="relative w-full h-[300px] sm:h-[340px] rounded-2xl overflow-hidden bg-slate-900 border border-white/10 flex items-center justify-center">
               {isBotOrLocalCall ? (
                 <video
-                  ref={localVideoRef}
+                  ref={attachLocalVideoRef}
                   autoPlay
                   playsInline
                   muted
@@ -593,7 +612,7 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
                   />
                   <div className="absolute bottom-3 right-3 w-32 h-24 rounded-xl overflow-hidden border-2 border-white/30 bg-black/80 shadow-lg">
                     <video
-                      ref={localVideoRef}
+                      ref={attachLocalVideoRef}
                       autoPlay
                       playsInline
                       muted

@@ -16,7 +16,13 @@ import {
   Calendar,
   Trash2,
   Code2,
-  Check
+  Check,
+  Loader2,
+  Crop,
+  SlidersHorizontal,
+  Type,
+  Download,
+  Plus
 } from 'lucide-react';
 import EmojiPicker from 'emoji-picker-react';
 import AiToneModal from './AiToneModal';
@@ -64,6 +70,70 @@ function getFileExtension(name) {
   return name.split('.').pop().toUpperCase().slice(0, 6);
 }
 
+function processImageWithCanvas(srcUrl, isHd, options = {}) {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () => {
+      const maxDim = isHd ? 3840 : 1280;
+      const quality = isHd ? 0.96 : 0.8;
+      let sx = 0;
+      let sy = 0;
+      let sWidth = img.width || 1280;
+      let sHeight = img.height || 720;
+
+      if (options.croppedSquare) {
+        const minSide = Math.min(sWidth, sHeight);
+        sx = Math.round((sWidth - minSide) / 2);
+        sy = Math.round((sHeight - minSide) / 2);
+        sWidth = minSide;
+        sHeight = minSide;
+      }
+
+      let width = sWidth;
+      let height = sHeight;
+      if (width > maxDim || height > maxDim) {
+        if (width >= height) {
+          height = Math.round((height * maxDim) / width);
+          width = maxDim;
+        } else {
+          width = Math.round((width * maxDim) / height);
+          height = maxDim;
+        }
+      }
+
+      const canvas = document.createElement('canvas');
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext('2d');
+      if (options.filterMode === 'vivid') ctx.filter = 'contrast(1.12) saturate(1.22)';
+      else if (options.filterMode === 'bw') ctx.filter = 'grayscale(1) contrast(1.08)';
+      else if (options.filterMode === 'warm') ctx.filter = 'sepia(0.22) saturate(1.12)';
+      ctx.drawImage(img, sx, sy, sWidth, sHeight, 0, 0, width, height);
+
+      if (options.overlayText && options.overlayText.trim()) {
+        ctx.filter = 'none';
+        const fontSize = Math.max(20, Math.round(height * 0.045));
+        ctx.font = `600 ${fontSize}px "Segoe UI Variable Display", "Segoe UI", sans-serif`;
+        ctx.textAlign = 'center';
+        ctx.fillStyle = 'rgba(0,0,0,0.55)';
+        ctx.fillRect(0, height - fontSize * 2.2, width, fontSize * 2.2);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillText(options.overlayText.trim(), width / 2, height - fontSize * 0.75);
+      }
+
+      const dataUrl = canvas.toDataURL('image/jpeg', quality);
+      resolve({
+        dataUrl,
+        width,
+        height,
+        approxSize: formatExactFileSize(Math.round((dataUrl.length * 3) / 4)),
+      });
+    };
+    img.onerror = () => resolve({ dataUrl: srcUrl, width: 0, height: 0, approxSize: '' });
+    img.src = srcUrl;
+  });
+}
+
 export default function Composer({
   onSendMessage,
   replyingTo,
@@ -75,14 +145,21 @@ export default function Composer({
   const { t } = useLanguage();
   const [text, setText] = useState('');
   const [imagePreview, setImagePreview] = useState(null);
-  const [imageMeta, setImageMeta] = useState(null); // { fileName, fileSize, fileExt }
+  const [imageMeta, setImageMeta] = useState(null);
   const [pendingAttachment, setPendingAttachment] = useState(null);
+
+  // WhatsApp-style Pre-Send "HD" Media Preview & Editor Modal
+  const [hdPreviewModal, setHdPreviewModal] = useState(null); // { items: [{ rawSrc, fileName, isHd, caption, filterMode, croppedSquare, overlayText }], activeIndex }
+  const [showOverlayTextBar, setShowOverlayTextBar] = useState(false);
+  const [processingHdImage, setProcessingHdImage] = useState(false);
 
   // Built-in Code Snippet Composer
   const [showCodeModal, setShowCodeModal] = useState(false);
   const [codeLang, setCodeLang] = useState('cpp');
   const [codeContent, setCodeContent] = useState('');
-  const [pendingCodeBlock, setPendingCodeBlock] = useState(null); // { language, code }
+  const [pendingCodeBlock, setPendingCodeBlock] = useState(null);
+
+  const textInputRef = useRef(null);
 
   // Modals & Popovers
   const [showToneModal, setShowToneModal] = useState(false);
@@ -106,6 +183,7 @@ export default function Composer({
   const audioStreamRef = useRef(null);
 
   const photoInputRef = useRef(null);
+  const addMorePhotoRef = useRef(null);
   const docInputRef = useRef(null);
   const audioInputRef = useRef(null);
   const attachMenuRef = useRef(null);
@@ -193,12 +271,15 @@ export default function Composer({
 
       const reader = new FileReader();
       reader.onloadend = () => {
+        const dur = currentDuration || 1;
         onSendMessage({
           text: '',
+          audio_url: reader.result,
+          audio_duration: dur,
           mediaType: 'audio',
           mediaUrl: reader.result,
-          duration: currentDuration || 1,
-          fileName: `Voice_${Date.now().toString().slice(-4)}.m4a`,
+          duration: dur,
+          fileName: `Voice_${Date.now().toString().slice(-4)}.webm`,
           fileSize: formatExactFileSize(audioBlob.size),
         });
       };
@@ -264,20 +345,123 @@ export default function Composer({
     }
   };
 
-  // High-Resolution Uncompressed Photo / Video Upload
-  const handlePhotoVideoChange = (e) => {
-    const file = e.target.files?.[0];
-    if (file) {
-      const url = URL.createObjectURL(file);
-      setImagePreview(url);
-      setImageMeta({
-        fileName: file.name,
-        fileSize: formatExactFileSize(file.size),
-        fileExt: getFileExtension(file.name),
+  // WhatsApp-style Pre-Send Media Preview & Editor trigger (supports multi-photo + HD toggle)
+  const loadImagesIntoPreviewModal = (files, append = false) => {
+    const imgFiles = Array.from(files || []).filter((f) => f.type?.startsWith('image/'));
+    if (imgFiles.length === 0) return;
+
+    Promise.all(
+      imgFiles.map(
+        (file) =>
+          new Promise((res) => {
+            const reader = new FileReader();
+            reader.onload = () =>
+              res(
+                reader.result
+                  ? {
+                      rawSrc: reader.result,
+                      fileName: file.name || `Image_${Date.now()}.jpg`,
+                      isHd: false,
+                      caption: text || '',
+                      filterMode: 'none',
+                      croppedSquare: false,
+                      overlayText: '',
+                    }
+                  : null
+              );
+            reader.onerror = () => res(null);
+            reader.readAsDataURL(file);
+          })
+      )
+    ).then((loaded) => {
+      const valid = loaded.filter(Boolean);
+      if (valid.length === 0) return;
+      setShowOverlayTextBar(false);
+      setHdPreviewModal((prev) => {
+        if (append && prev?.items?.length) {
+          const nextItems = [...prev.items, ...valid];
+          return { items: nextItems, activeIndex: nextItems.length - valid.length };
+        }
+        return { items: valid, activeIndex: 0 };
       });
+    });
+  };
+
+  const handlePhotoVideoChange = (e) => {
+    const files = e.target.files;
+    if (files?.length) {
+      const firstFile = files[0];
+      const hasImages = Array.from(files).some((f) => f.type?.startsWith('image/'));
+      if (hasImages) {
+        loadImagesIntoPreviewModal(files, false);
+      } else if (firstFile) {
+        const url = URL.createObjectURL(firstFile);
+        setPendingAttachment({
+          type: 'document',
+          fileName: firstFile.name,
+          fileSize: formatExactFileSize(firstFile.size),
+          fileExt: getFileExtension(firstFile.name),
+          fileUrl: url,
+        });
+      }
       setShowAttachMenu(false);
     }
     e.target.value = '';
+  };
+
+  const handleConfirmSendHdImage = async (e) => {
+    e?.preventDefault();
+    const items = hdPreviewModal?.items || [];
+    if (items.length === 0 || processingHdImage) return;
+    setProcessingHdImage(true);
+    try {
+      for (const item of items) {
+        const processed = await processImageWithCanvas(item.rawSrc, item.isHd, {
+          filterMode: item.filterMode,
+          croppedSquare: item.croppedSquare,
+          overlayText: item.overlayText,
+        });
+        await onSendMessage({
+          text: (item.caption || '').trim(),
+          image: processed.dataUrl,
+          mediaUrl: processed.dataUrl,
+          mediaType: 'image',
+          is_hd: Boolean(item.isHd),
+          fileName: item.fileName,
+          fileSize: processed.approxSize || undefined,
+          fileExt: 'JPG',
+        });
+      }
+      setHdPreviewModal(null);
+      setShowOverlayTextBar(false);
+      setText('');
+      if (onCancelReply) onCancelReply();
+    } finally {
+      setProcessingHdImage(false);
+    }
+  };
+
+  const applyRichFormat = (marker) => {
+    const el = textInputRef.current;
+    if (!el) {
+      setText((prev) => `${prev}${marker}${marker}`);
+      return;
+    }
+    const start = el.selectionStart ?? text.length;
+    const end = el.selectionEnd ?? text.length;
+    const selected = text.slice(start, end);
+    const wrapped = selected ? `${marker}${selected}${marker}` : `${marker}text${marker}`;
+    const nextVal = text.slice(0, start) + wrapped + text.slice(end);
+    setText(nextVal);
+    setTimeout(() => {
+      el.focus();
+      if (selected) {
+        const pos = start + wrapped.length;
+        el.setSelectionRange(pos, pos);
+      } else {
+        el.setSelectionRange(start + marker.length, start + marker.length + 4);
+      }
+    }, 10);
   };
 
   // Uncompressed File & Code (.cpp, .py, .pdf, .zip, etc.) Upload
@@ -327,7 +511,7 @@ export default function Composer({
   const hasContent = Boolean(text.trim() || imagePreview || pendingAttachment || pendingCodeBlock);
 
   return (
-    <div className="p-2.5 sm:p-3 bg-[#f0f2f5] dark:bg-[#202c33] border-t border-[#d1d7db]/80 dark:border-[#2a3942]/80 z-20 transition-colors relative font-sans select-none">
+    <div className="p-2 sm:p-2.5 bg-[#f0f2f5] dark:bg-[#111b21] border-t border-[#e9edef] dark:border-[#222e35] z-20 transition-colors duration-150 relative select-none">
       
       {/* 1. Reply Banner */}
       {replyingTo && (
@@ -415,7 +599,18 @@ export default function Composer({
       </div>
 
       {/* Hidden File Inputs (Uncompressed High-Res & Code Files Supported) */}
-      <input type="file" accept="image/*,video/*" ref={photoInputRef} onChange={handlePhotoVideoChange} className="hidden" />
+      <input type="file" accept="image/*,video/*" multiple ref={photoInputRef} onChange={handlePhotoVideoChange} className="hidden" />
+      <input
+        type="file"
+        accept="image/*"
+        multiple
+        ref={addMorePhotoRef}
+        onChange={(e) => {
+          if (e.target.files?.length) loadImagesIntoPreviewModal(e.target.files, true);
+          e.target.value = '';
+        }}
+        className="hidden"
+      />
       <input
         type="file"
         accept=".cpp,.c,.h,.py,.js,.jsx,.ts,.tsx,.sql,.java,.pdf,.zip,.rar,.doc,.docx,.txt,.ppt,.pptx,.md,.json,.csv"
@@ -612,7 +807,7 @@ export default function Composer({
         <div className="flex items-center justify-between gap-3 bg-white dark:bg-[#202c33] rounded-full px-4 py-2 border border-rose-500/30 shadow-md animate-fadeIn">
           <div className="flex items-center gap-2.5">
             <span className="w-3 h-3 rounded-full bg-rose-500 animate-ping" />
-            <span className="text-[14px] font-mono font-bold text-rose-600 dark:text-rose-400">
+            <span className="font-numeric text-[14px] font-bold text-rose-600 dark:text-rose-400">
               {formatRecordingTime(recordingSeconds)}
             </span>
             <span className="text-[12.5px] text-[#8696a0] hidden sm:inline">
@@ -642,40 +837,78 @@ export default function Composer({
           </div>
         </div>
       ) : (
-        <div className="flex items-center gap-1.5 sm:gap-2 px-1.5 sm:px-2 py-1">
-          {/* Unified Floating Pill Input Bar */}
-          <div className="flex-1 flex items-center bg-white dark:bg-[#202c33] rounded-full px-2 sm:px-3 py-1 shadow-md border border-black/5 dark:border-white/10 transition-all min-w-0">
-            {/* Emoji Toggle */}
+        <div className="space-y-1">
+          {/* Quick Rich Text Formatting Toolbar (*bold*, _italic_, ~strike~, `code`) */}
+          <div className="flex items-center gap-1 px-2">
             <button
-              id="emoji-toggle-btn"
               type="button"
-              onClick={() => {
-                setShowEmojiTray(!showEmojiTray);
-                setShowAttachMenu(false);
-              }}
-              title="Emojis, GIFs & Stickers"
-              className={`p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
-                showEmojiTray
-                  ? 'text-[#00a884] dark:text-[#25d366]'
-                  : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884]'
-              }`}
+              onClick={() => applyRichFormat('*')}
+              title="Bold (*text*)"
+              className="px-2 py-0.5 rounded-md text-[11px] font-bold text-[#54656f] dark:text-[#8696a0] hover:bg-black/5 dark:hover:bg-[#202c33] cursor-pointer"
             >
-              <Smile className="w-5 h-5" />
+              B
             </button>
+            <button
+              type="button"
+              onClick={() => applyRichFormat('_')}
+              title="Italic (_text_)"
+              className="px-2 py-0.5 rounded-md text-[11px] italic font-semibold text-[#54656f] dark:text-[#8696a0] hover:bg-black/5 dark:hover:bg-[#202c33] cursor-pointer"
+            >
+              I
+            </button>
+            <button
+              type="button"
+              onClick={() => applyRichFormat('~')}
+              title="Strikethrough (~text~)"
+              className="px-2 py-0.5 rounded-md text-[11px] line-through font-semibold text-[#54656f] dark:text-[#8696a0] hover:bg-black/5 dark:hover:bg-[#202c33] cursor-pointer"
+            >
+              S
+            </button>
+            <button
+              type="button"
+              onClick={() => applyRichFormat('`')}
+              title="Inline code (`code`)"
+              className="px-2 py-0.5 rounded-md text-[11px] font-mono font-semibold text-[#54656f] dark:text-[#8696a0] hover:bg-black/5 dark:hover:bg-[#202c33] cursor-pointer"
+            >
+              {'</>'}
+            </button>
+          </div>
 
-            {/* Text Input */}
-            <input
-              type="text"
-              value={text}
-              onChange={(e) => setText(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder={
-                chat?.isSelfChat
-                  ? t('vaultPlaceholder')
-                  : t('messagePlaceholder')
-              }
-              className="flex-1 px-2 py-1.5 bg-transparent text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[14px] focus:outline-none font-sans min-w-0"
-            />
+          <div className="flex items-center gap-1.5 sm:gap-2 px-1 sm:px-1.5 py-0.5">
+            {/* Unified Floating Pill Input Bar */}
+            <div className="flex-1 flex items-center bg-white dark:bg-[#202c33] rounded-full px-2 sm:px-3 py-1 border border-[#e9edef] dark:border-[#222e35] min-w-0">
+              {/* Emoji Toggle */}
+              <button
+                id="emoji-toggle-btn"
+                type="button"
+                onClick={() => {
+                  setShowEmojiTray(!showEmojiTray);
+                  setShowAttachMenu(false);
+                }}
+                title="Emojis, GIFs & Stickers"
+                className={`p-1.5 rounded-full transition-colors cursor-pointer flex-shrink-0 ${
+                  showEmojiTray
+                    ? 'text-[#00a884] dark:text-[#25d366]'
+                    : 'text-[#54656f] dark:text-[#8696a0] hover:text-[#00a884]'
+                }`}
+              >
+                <Smile className="w-5 h-5" />
+              </button>
+
+              {/* Text Input */}
+              <input
+                ref={textInputRef}
+                type="text"
+                value={text}
+                onChange={(e) => setText(e.target.value)}
+                onKeyDown={handleKeyDown}
+                placeholder={
+                  chat?.isSelfChat
+                    ? t('vaultPlaceholder')
+                    : t('messagePlaceholder')
+                }
+                className="flex-1 px-2 py-1.5 bg-transparent text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[14px] focus:outline-none min-w-0"
+              />
 
             {/* Paperclip Button inside pill */}
             <button
@@ -756,6 +989,7 @@ export default function Composer({
               <Mic className="w-5 h-5" />
             </button>
           )}
+          </div>
         </div>
       )}
 
@@ -869,12 +1103,261 @@ export default function Composer({
           isOpen={showCameraModal}
           onClose={() => setShowCameraModal(false)}
           onCapture={(capturedUrl) => {
-            setImagePreview(capturedUrl);
-            setImageMeta({ fileName: `Camera_${Date.now()}.png`, fileSize: 'Full-Res', fileExt: 'PNG' });
+            setHdPreviewModal({
+              items: [
+                {
+                  rawSrc: capturedUrl,
+                  fileName: `Camera_${Date.now()}.jpg`,
+                  isHd: false,
+                  caption: text || '',
+                  filterMode: 'none',
+                  croppedSquare: false,
+                  overlayText: '',
+                },
+              ],
+              activeIndex: 0,
+            });
             setShowCameraModal(false);
           }}
         />
       )}
+
+      {/* WhatsApp-Style Inline Media Preview & Editor Modal with "HD" Toggle */}
+      {hdPreviewModal && hdPreviewModal.items?.length > 0 && (() => {
+        const items = hdPreviewModal.items;
+        const activeIdx = Math.min(hdPreviewModal.activeIndex || 0, items.length - 1);
+        const activeItem = items[activeIdx];
+        const updateActiveItem = (patch) => {
+          setHdPreviewModal((prev) => ({
+            ...prev,
+            items: prev.items.map((it, idx) => (idx === activeIdx ? { ...it, ...patch } : it)),
+          }));
+        };
+        const filterCss =
+          activeItem.filterMode === 'vivid'
+            ? 'contrast(1.12) saturate(1.22)'
+            : activeItem.filterMode === 'bw'
+            ? 'grayscale(1) contrast(1.08)'
+            : activeItem.filterMode === 'warm'
+            ? 'sepia(0.22) saturate(1.12)'
+            : 'none';
+        const filterOrder = ['none', 'vivid', 'bw', 'warm'];
+
+        return (
+          <div className="fixed inset-0 z-50 flex flex-col bg-[#0b141a] text-[#e9edef] animate-fadeIn">
+            {/* Top Editor Toolbar */}
+            <div className="px-4 py-3 bg-[#111b21] border-b border-[#222e35] flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setHdPreviewModal(null);
+                    setShowOverlayTextBar(false);
+                  }}
+                  className="p-2 rounded-full hover:bg-[#202c33] text-[#aebac1] hover:text-white cursor-pointer"
+                  title="Close"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+                <div className="min-w-0">
+                  <span className="text-[14px] font-semibold block truncate">
+                    {activeItem.fileName}
+                  </span>
+                  <span className="font-numeric text-[11px] text-[#8696a0]">
+                    {activeItem.isHd
+                      ? 'HD Mode ON • Max 3840px (4K) @ 96% quality'
+                      : 'Standard Mode • Max 1280px @ 80% quality'}
+                  </span>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-1.5 sm:gap-2 flex-shrink-0">
+                {/* HD Toggle */}
+                <button
+                  type="button"
+                  onClick={() => updateActiveItem({ isHd: !activeItem.isHd })}
+                  className={`px-3 py-1.5 rounded-full text-[12px] font-bold border flex items-center gap-1 cursor-pointer ${
+                    activeItem.isHd
+                      ? 'bg-[#00a884] border-[#00a884] text-white'
+                      : 'bg-[#202c33] border-[#222e35] text-[#aebac1] hover:text-white'
+                  }`}
+                  title="Toggle HD (4K) Quality"
+                >
+                  <span className="font-numeric">HD</span>
+                </button>
+
+                {/* Crop 1:1 / Original Toggle */}
+                <button
+                  type="button"
+                  onClick={() => updateActiveItem({ croppedSquare: !activeItem.croppedSquare })}
+                  className={`p-2 rounded-full border cursor-pointer ${
+                    activeItem.croppedSquare
+                      ? 'bg-[#005c4b] border-[#00a884] text-white'
+                      : 'bg-[#202c33] border-[#222e35] text-[#aebac1] hover:text-white'
+                  }`}
+                  title="Crop (Square / Original)"
+                >
+                  <Crop className="w-4 h-4" />
+                </button>
+
+                {/* Filter Cycle */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    const nextIdx = (filterOrder.indexOf(activeItem.filterMode || 'none') + 1) % filterOrder.length;
+                    updateActiveItem({ filterMode: filterOrder[nextIdx] });
+                  }}
+                  className={`p-2 rounded-full border cursor-pointer ${
+                    activeItem.filterMode && activeItem.filterMode !== 'none'
+                      ? 'bg-[#005c4b] border-[#00a884] text-white'
+                      : 'bg-[#202c33] border-[#222e35] text-[#aebac1] hover:text-white'
+                  }`}
+                  title={`Filter (${activeItem.filterMode || 'none'})`}
+                >
+                  <SlidersHorizontal className="w-4 h-4" />
+                </button>
+
+                {/* Text Overlay Toggle */}
+                <button
+                  type="button"
+                  onClick={() => setShowOverlayTextBar((v) => !v)}
+                  className={`p-2 rounded-full border cursor-pointer ${
+                    showOverlayTextBar || activeItem.overlayText
+                      ? 'bg-[#005c4b] border-[#00a884] text-white'
+                      : 'bg-[#202c33] border-[#222e35] text-[#aebac1] hover:text-white'
+                  }`}
+                  title="Add Image Label Text"
+                >
+                  <Type className="w-4 h-4" />
+                </button>
+
+                {/* Download Processed Preview ("Done") */}
+                <button
+                  type="button"
+                  onClick={async () => {
+                    const processed = await processImageWithCanvas(activeItem.rawSrc, activeItem.isHd, {
+                      filterMode: activeItem.filterMode,
+                      croppedSquare: activeItem.croppedSquare,
+                      overlayText: activeItem.overlayText,
+                    });
+                    const a = document.createElement('a');
+                    a.href = processed.dataUrl;
+                    a.download = activeItem.fileName || 'Nexo_Media.jpg';
+                    a.click();
+                  }}
+                  className="hidden sm:inline-flex items-center gap-1 px-3 py-1.5 rounded-full bg-[#202c33] hover:bg-[#2a3942] border border-[#222e35] text-[12px] font-medium text-[#e9edef] cursor-pointer"
+                  title="Download Preview"
+                >
+                  <Download className="w-3.5 h-3.5 text-[#00a884]" />
+                  <span>Done</span>
+                </button>
+              </div>
+            </div>
+
+            {showOverlayTextBar && (
+              <div className="px-4 py-2 bg-[#111b21] border-b border-[#222e35] flex items-center justify-center">
+                <input
+                  type="text"
+                  value={activeItem.overlayText || ''}
+                  onChange={(e) => updateActiveItem({ overlayText: e.target.value })}
+                  placeholder="Type label text onto image..."
+                  className="w-full max-w-md px-3.5 py-1.5 rounded-full bg-[#202c33] border border-[#222e35] text-[13px] text-white placeholder-[#8696a0] focus:outline-none focus:border-[#00a884]"
+                />
+              </div>
+            )}
+
+            {/* Centered Crisp Image Stage */}
+            <div className="flex-1 flex items-center justify-center p-4 overflow-hidden relative">
+              <div className="relative max-h-full max-w-full flex items-center justify-center">
+                <img
+                  src={activeItem.rawSrc}
+                  alt="Media preview"
+                  style={{ filter: filterCss }}
+                  className={`rounded-xl border border-[#222e35] transition-all ${
+                    activeItem.croppedSquare
+                      ? 'w-[min(70vh,86vw)] h-[min(70vh,86vw)] object-cover'
+                      : 'max-h-[66vh] max-w-[92vw] object-contain'
+                  }`}
+                />
+                {activeItem.overlayText && (
+                  <div className="absolute bottom-3 left-3 right-3 bg-black/60 text-white text-center py-1.5 px-3 rounded-lg text-[13.5px] font-semibold">
+                    {activeItem.overlayText}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Thumbnail Strip + Caption + Emerald Send Button */}
+            <form
+              onSubmit={handleConfirmSendHdImage}
+              className="p-3 sm:p-4 bg-[#111b21] border-t border-[#222e35] space-y-3"
+            >
+              {/* Thumbnail Strip with + Add */}
+              <div className="flex items-center justify-center gap-2 overflow-x-auto no-scrollbar py-0.5">
+                {items.map((item, idx) => (
+                  <div key={idx} className="relative flex-shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => setHdPreviewModal((prev) => ({ ...prev, activeIndex: idx }))}
+                      className={`w-12 h-12 rounded-lg overflow-hidden border-2 cursor-pointer block ${
+                        idx === activeIdx ? 'border-[#00a884]' : 'border-[#222e35] opacity-65 hover:opacity-100'
+                      }`}
+                    >
+                      <img src={item.rawSrc} alt={item.fileName} className="w-full h-full object-cover" />
+                    </button>
+                    {items.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextItems = items.filter((_, i) => i !== idx);
+                          setHdPreviewModal({
+                            items: nextItems,
+                            activeIndex: Math.min(activeIdx, nextItems.length - 1),
+                          });
+                        }}
+                        className="absolute -top-1.5 -right-1.5 w-4 h-4 rounded-full bg-rose-600 text-white flex items-center justify-center text-[10px] cursor-pointer"
+                      >
+                        <X className="w-2.5 h-2.5" />
+                      </button>
+                    )}
+                  </div>
+                ))}
+
+                <button
+                  type="button"
+                  onClick={() => addMorePhotoRef.current?.click()}
+                  className="w-12 h-12 rounded-lg bg-[#202c33] hover:bg-[#2a3942] border border-[#222e35] text-[#aebac1] hover:text-white flex items-center justify-center flex-shrink-0 cursor-pointer"
+                  title="Add more images"
+                >
+                  <Plus className="w-5 h-5" />
+                </button>
+              </div>
+
+              <div className="flex items-center gap-2.5 max-w-2xl w-full mx-auto">
+                <input
+                  type="text"
+                  value={activeItem.caption || ''}
+                  onChange={(e) => updateActiveItem({ caption: e.target.value })}
+                  placeholder="Add a caption..."
+                  className="flex-1 px-4 py-2.5 rounded-full bg-[#202c33] text-[14px] text-[#e9edef] placeholder-[#8696a0] border border-[#222e35] focus:outline-none focus:border-[#00a884]"
+                />
+                <button
+                  type="submit"
+                  disabled={processingHdImage}
+                  className="w-12 h-12 rounded-full bg-[#00a884] hover:bg-[#008f6f] disabled:opacity-60 text-white flex items-center justify-center cursor-pointer flex-shrink-0"
+                  title="Send Media"
+                >
+                  {processingHdImage ? (
+                    <Loader2 className="w-5 h-5 animate-spin" />
+                  ) : (
+                    <Send className="w-5 h-5 ml-0.5" />
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        );
+      })()}
 
       {showPollModal && (
         <CreatePollModal

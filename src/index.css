@@ -12,9 +12,18 @@ html.dark {
   --outgoing-bubble-text: #e9edef;
 }
 
+/* Numbers & digits (U+0030-0039) rendered in SF Pro Display across entire app */
+@font-face {
+  font-family: 'SF Pro Display Digits';
+  src: local('SF Pro Display'), local('SF Pro Text'), local('-apple-system'), local('BlinkMacSystemFont'), local('Segoe UI Variable Display'), local('Segoe UI');
+  unicode-range: U+0030-0039;
+  font-weight: 300 800;
+  font-display: swap;
+}
+
 @layer base {
   html, body, *, input, button, textarea, select {
-    font-family: Arial, Helvetica, sans-serif !important;
+    font-family: 'SF Pro Display Digits', 'Segoe UI Variable Display', 'Segoe UI', -apple-system, BlinkMacSystemFont, sans-serif !important;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
     text-rendering: optimizeLegibility;
@@ -33,6 +42,11 @@ html.dark {
 }
 
 @layer utilities {
+  .font-numeric {
+    font-family: 'SF Pro Display', -apple-system, BlinkMacSystemFont, sans-serif !important;
+    font-variant-numeric: tabular-nums;
+  }
+
   /* Hide scrollbar for Chrome, Safari and Opera */
   .no-scrollbar::-webkit-scrollbar {
     display: none;
@@ -59,33 +73,35 @@ html.dark {
     background: rgba(134, 150, 160, 0.55);
   }
 
-  /* WhatsApp Doodle Pattern for Profile Banner */
+  button, a, [role="button"] {
+    transition-property: background-color, color, border-color, opacity, transform;
+    transition-duration: 150ms;
+    transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* Clear solid WhatsApp backgrounds (zero visual clutter) */
   .whatsapp-doodle-light {
-    background-color: #e5ded8;
-    background-image: radial-gradient(#d1c7bc 1px, transparent 1px), radial-gradient(#d1c7bc 1px, #e5ded8 1px);
-    background-size: 24px 24px;
-    background-position: 0 0, 12px 12px;
+    background-color: #ffffff;
+    background-image: none;
   }
 
   .whatsapp-doodle-dark {
-    background-color: #121b22;
-    background-image: radial-gradient(#202c33 1px, transparent 1px), radial-gradient(#202c33 1px, #121b22 1px);
-    background-size: 24px 24px;
-    background-position: 0 0, 12px 12px;
+    background-color: #0b141a;
+    background-image: none;
   }
 
-  /* Tech Grid Wallpaper */
+  /* Tech Grid Wallpaper (Subtle Neutral Hairlines) */
   .nexo-tech-grid-light {
-    background-color: #f6f8fb;
-    background-image: linear-gradient(to right, rgba(0, 85, 255, 0.06) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(0, 85, 255, 0.06) 1px, transparent 1px);
+    background-color: #ffffff;
+    background-image: linear-gradient(to right, rgba(233, 237, 239, 0.7) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(233, 237, 239, 0.7) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 
   .nexo-tech-grid-dark {
-    background-color: #0b1218;
-    background-image: linear-gradient(to right, rgba(56, 189, 248, 0.07) 1px, transparent 1px),
-      linear-gradient(to bottom, rgba(56, 189, 248, 0.07) 1px, transparent 1px);
+    background-color: #0b141a;
+    background-image: linear-gradient(to right, rgba(34, 46, 53, 0.35) 1px, transparent 1px),
+      linear-gradient(to bottom, rgba(34, 46, 53, 0.35) 1px, transparent 1px);
     background-size: 24px 24px;
   }
 }

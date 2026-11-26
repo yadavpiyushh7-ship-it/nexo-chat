@@ -9,8 +9,17 @@ export default {
     extend: {
       fontFamily: {
         sans: [
-          'Arial',
-          'Helvetica',
+          '"SF Pro Display Digits"',
+          '"Segoe UI Variable Display"',
+          '"Segoe UI"',
+          '-apple-system',
+          'BlinkMacSystemFont',
+          'sans-serif'
+        ],
+        numeric: [
+          '"SF Pro Display"',
+          '-apple-system',
+          'BlinkMacSystemFont',
           'sans-serif'
         ],
       },

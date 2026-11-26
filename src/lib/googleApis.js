@@ -15,6 +15,17 @@ export const GOOGLE_OAUTH_SCOPES = [
 const TOKEN_STORAGE_KEY = 'nexo_google_oauth_token';
 const USER_STORAGE_KEY = 'nexo_google_oauth_user';
 const AUTH_EVENT_NAME = 'nexo-google-auth-changed';
+const DEFAULT_GOOGLE_CLIENT_ID = '820142913816-jr2pcg3iujlj6qp311e3vlhq552me9kk.apps.googleusercontent.com';
+
+export function getGoogleClientId() {
+  const envId = (import.meta.env.VITE_GOOGLE_CLIENT_ID || '').trim();
+  if (envId && !envId.includes('aapki-copied')) return envId;
+  try {
+    const stored = (localStorage.getItem('nexo_google_client_id') || '').trim();
+    if (stored) return stored;
+  } catch {}
+  return DEFAULT_GOOGLE_CLIENT_ID;
+}
 
 export function ensureGisScriptLoaded() {
   if (typeof window === 'undefined') return Promise.resolve(false);
@@ -75,12 +86,7 @@ export function useGoogleAuth() {
 
   const signIn = useCallback(async () => {
     setError('');
-    const clientId = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-    if (!clientId) {
-      const msg = 'Set VITE_GOOGLE_CLIENT_ID in .env to enable Google OAuth 2.0 (Gmail, Contacts, Slides, Sheets, YouTube).';
-      setError(msg);
-      return { ok: false, error: msg };
-    }
+    const clientId = getGoogleClientId();
 
     setLoading(true);
     const loaded = await ensureGisScriptLoaded();

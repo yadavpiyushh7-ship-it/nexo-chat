@@ -12,7 +12,7 @@ import StarredMessagesModal from './components/StarredMessagesModal';
 import ConnectedDevicesModal from './components/ConnectedDevicesModal';
 import DeleteMessageModal from './components/DeleteMessageModal';
 import SummarizeModal from './components/SummarizeModal';
-import StatusView from './components/StatusView';
+import MobileHubView from './components/MobileHubView';
 import CommunitiesView from './components/CommunitiesView';
 import CallsView from './components/CallsView';
 import WorkspaceHubView from './components/WorkspaceHubView';
@@ -20,7 +20,7 @@ import EdTechPrepView from './components/EdTechPrepView';
 import YouTubeHubView from './components/YouTubeHubView';
 import AppLockScreen from './components/AppLockScreen';
 import AvatarIcon from './components/AvatarIcon';
-import { Plus, CheckCircle2, X, Phone, PhoneOff, Video, Laptop, ShieldCheck, UserPlus, Loader2 } from 'lucide-react';
+import { Plus, CheckCircle2, X, Phone, PhoneOff, Video, Laptop, ShieldCheck, UserPlus, Loader2, Bell } from 'lucide-react';
 import {
   INITIAL_ARCHIVED,
   INITIAL_FOLDERS,
@@ -38,22 +38,56 @@ import {
   encryptMessageText,
   decryptMessageText,
 } from './lib/e2ee';
+import {
+  requestNotificationPermission,
+  playMessageChime,
+  startIncomingRingtone,
+  triggerIncomingBrowserNotification,
+} from './lib/notifications';
 
 const isValidUUID = (str) =>
   typeof str === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
+function getOrCreateBrowserUserId() {
+  try {
+    const storedId = localStorage.getItem('nexo_user_id');
+    if (storedId && storedId !== 'student_piyush_jecrc' && isValidUUID(storedId)) {
+      return storedId;
+    }
+    const freshId =
+      typeof crypto !== 'undefined' && crypto.randomUUID
+        ? crypto.randomUUID()
+        : `${Date.now()}-${Math.random().toString(16).slice(2, 10)}-4000-8000-000000000000`;
+    localStorage.setItem('nexo_user_id', freshId);
+    return freshId;
+  } catch {
+    return `${Date.now()}`;
+  }
+}
+
 export default function App() {
-  // 1. Direct Auto-Load Profile (No Login / Sign-Up / OTP Gateway)
+  // 1. Direct Auto-Load Profile with Unique Per-Browser UUID
   const [user, setUser] = useState(() => {
+    const browserId = getOrCreateBrowserUserId();
     try {
       const saved = localStorage.getItem('nexo_user');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (parsed?.name && parsed?.username) return parsed;
+        if (parsed?.name && parsed?.username) {
+          const normalized = { ...parsed, id: browserId };
+          if (parsed.id !== browserId) {
+            localStorage.setItem('nexo_user', JSON.stringify(normalized));
+          }
+          return normalized;
+        }
       }
     } catch {}
-    return DEFAULT_STUDENT_PROFILE;
+    const initialUser = { ...DEFAULT_STUDENT_PROFILE, id: browserId };
+    try {
+      localStorage.setItem('nexo_user', JSON.stringify(initialUser));
+    } catch {}
+    return initialUser;
   });
 
   // 2. Navigation Tabs: 'chats' | 'updates' | 'communities' | 'calls'
@@ -95,15 +129,47 @@ export default function App() {
     applyThemePreferences(nextAccent, nextWallpaper);
   }, []);
 
-  // 5. Chat & Campus Workspace State (Pre-loaded immediately on open)
+  // 5. Chat & Campus Workspace State (Persistent across reloads via localStorage + Supabase)
   const [searchQuery, setSearchQuery] = useState('');
   const [activeFolder, setActiveFolder] = useState('all');
-  const [chats, setChats] = useState(() => createCampusWorkspaceChats(user));
+  const [chats, setChats] = useState(() => {
+    try {
+      const isInit = localStorage.getItem('nexo_initialized') === '1';
+      const saved = localStorage.getItem('nexo_chats_v2');
+      if (isInit && saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+      localStorage.setItem('nexo_initialized', '1');
+    } catch {}
+    return createCampusWorkspaceChats(user);
+  });
   const [archivedChats, setArchivedChats] = useState(INITIAL_ARCHIVED);
   const [activeChatId, setActiveChatId] = useState(() =>
     typeof window !== 'undefined' && window.innerWidth >= 768 ? 'chat_placement_cell' : null
   );
   const [replyingTo, setReplyingTo] = useState(null);
+
+  // Persist chats & messages across browser reloads
+  useEffect(() => {
+    try {
+      localStorage.setItem('nexo_initialized', '1');
+      localStorage.setItem('nexo_chats_v2', JSON.stringify(chats));
+    } catch {
+      // If oversized inline media exceeds quota, preserve text/metadata without crashing
+      try {
+        const compactChats = chats.map((c) => ({
+          ...c,
+          messages: c.messages.map((m) => ({
+            ...m,
+            image: m.image && m.image.length > 350000 ? null : m.image,
+            audio_url: m.audio_url && m.audio_url.length > 500000 ? null : m.audio_url,
+          })),
+        }));
+        localStorage.setItem('nexo_chats_v2', JSON.stringify(compactChats));
+      } catch {}
+    }
+  }, [chats]);
 
   // 6. Distraction-Free Exam / Study Focus Mode
   const [focusMode, setFocusMode] = useState(false);
@@ -136,12 +202,16 @@ export default function App() {
     } catch {}
   }, [bookmarkedVault]);
 
-  // 8. Message Scheduling Queue, E2EE Keys & Multi-Device Session Sync
+  // 8. Message Scheduling Queue, E2EE Keys, Invite Onboarding & Notifications
   const [scheduledQueue, setScheduledQueue] = useState([]);
   const [appToast, setAppToast] = useState('');
+  const [incomingToastBanner, setIncomingToastBanner] = useState(null);
+  const [joinInviteModal, setJoinInviteModal] = useState(null);
+  const [joinNameDraft, setJoinNameDraft] = useState('');
+  const [joinUsernameDraft, setJoinUsernameDraft] = useState('');
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [workspaceInitialTab, setWorkspaceInitialTab] = useState('gmail');
-  const [updatesSubTab, setUpdatesSubTab] = useState('statuses');
+  const [hubSubTab, setHubSubTab] = useState('workspace');
   const [loggedOutFromPrimary, setLoggedOutFromPrimary] = useState(false);
   const [myKeys, setMyKeys] = useState(null);
 
@@ -182,8 +252,8 @@ export default function App() {
     const isMobile = typeof window !== 'undefined' && window.innerWidth < 768;
     if (isMobile) {
       const subMap = { workspace: 'workspace', prep: 'prep', youtube: 'lectures' };
-      setUpdatesSubTab(subMap[hub] || 'statuses');
-      setActiveNavTab('updates');
+      setHubSubTab(subMap[hub] || 'workspace');
+      setActiveNavTab('hub');
     } else {
       setActiveNavTab(hub);
     }
@@ -255,6 +325,8 @@ export default function App() {
 
     if (connectParam) {
       const cleanInviter = connectParam.startsWith('@') ? connectParam : `@${connectParam}`;
+      const inviteDone = localStorage.getItem('nexo_invite_profile_done') === '1';
+
       supabase
         .from('profiles')
         .select('id, username, full_name, mood, focus_reply')
@@ -269,22 +341,37 @@ export default function App() {
             }
           } catch {}
           const peerId = prof?.id || `invite_${cleanInviter.replace('@', '')}`;
-          handleStartChatWith({
+          const inviterContact = {
             id: peerId,
             recipientId: prof?.id || peerId,
             name: prof?.full_name || cleanInviter.replace('@', ''),
             handle: prof?.username || cleanInviter,
             bio: prof?.mood || 'Nexo E2EE Peer',
             e2eePubJwk: inviterPubJwk,
-          });
+          };
+
+          if (!inviteDone) {
+            setJoinNameDraft('');
+            setJoinUsernameDraft('');
+            setJoinInviteModal({ inviterContact });
+          } else {
+            handleStartChatWith(inviterContact);
+          }
         })
         .catch(() => {
-          handleStartChatWith({
+          const inviterContact = {
             id: `invite_${cleanInviter.replace('@', '')}`,
             name: cleanInviter.replace('@', ''),
             handle: cleanInviter,
             bio: 'Nexo E2EE Peer',
-          });
+          };
+          if (!inviteDone) {
+            setJoinNameDraft('');
+            setJoinUsernameDraft('');
+            setJoinInviteModal({ inviterContact });
+          } else {
+            handleStartChatWith(inviterContact);
+          }
         });
 
       window.history.replaceState({}, document.title, window.location.pathname);
@@ -441,9 +528,10 @@ export default function App() {
     return () => mediaQuery.removeEventListener('change', handler);
   }, [bubbleAccent, chatWallpaper]);
 
-  // Realtime Channel Subscription (nexo-db + realtime-messages + E2EE Decryption)
-  const handleIncomingMessageRecord = useCallback(async (record) => {
+  // Realtime Channel Subscription & E2EE Decryption + Fallbacks (Single stable mount subscription)
+  const handleIncomingMessageRecord = useCallback(async (record, options = {}) => {
     if (!record || !record.id) return;
+    const isHistoricalSync = Boolean(options.isHistorical);
     const currentUserId = userRef.current?.id;
     const currentUsername = userRef.current?.username?.toLowerCase();
     if (!currentUserId) return;
@@ -455,30 +543,43 @@ export default function App() {
     if (!isIncomingForMe && !isMySentEcho) return;
 
     const contactId = isIncomingForMe ? record.sender_id : record.receiver_id;
+    if (!contactId) return;
     const isCurrentlyOpen = activeChatIdRef.current === contactId;
 
-    // Cache sender's E2EE public JWK if provided
+    // Cache sender's E2EE public JWK & parse JSON envelope metadata
     let senderPubJwk = record.senderPubJwk || null;
     let rawContent = record.content || '';
-    let decodedText = rawContent;
+    let parsedEnvelope = null;
+    let decodedText = record.text || (typeof rawContent === 'string' && !rawContent.startsWith('{') ? rawContent : '');
     let isE2EE = false;
 
     if (typeof rawContent === 'string' && rawContent.startsWith('{')) {
       try {
-        const parsed = JSON.parse(rawContent);
-        if (parsed?.__e2ee && parsed?.ciphertext && parsed?.iv) {
+        parsedEnvelope = JSON.parse(rawContent);
+        if (parsedEnvelope?.__e2ee && parsedEnvelope?.ciphertext && parsedEnvelope?.iv) {
           isE2EE = true;
-          if (parsed.senderPubJwk) senderPubJwk = parsed.senderPubJwk;
+          if (parsedEnvelope.senderPubJwk) senderPubJwk = parsedEnvelope.senderPubJwk;
           if (senderPubJwk && contactId) {
             peerPubKeysRef.current[contactId] = senderPubJwk;
           }
-          const seed = [currentUserId, contactId].sort().join(':');
-          const aesKey = await deriveSharedAESKey(
-            myKeysRef.current?.privateJwk,
-            senderPubJwk || peerPubKeysRef.current[contactId],
-            seed
-          );
-          decodedText = await decryptMessageText(parsed.ciphertext, parsed.iv, aesKey);
+          try {
+            const seed = [currentUserId, contactId].sort().join(':');
+            const aesKey = await deriveSharedAESKey(
+              myKeysRef.current?.privateJwk,
+              senderPubJwk || peerPubKeysRef.current[contactId],
+              seed
+            );
+            const decrypted = await decryptMessageText(parsedEnvelope.ciphertext, parsedEnvelope.iv, aesKey);
+            if (decrypted && !decrypted.startsWith('🔒 Encrypted message')) {
+              decodedText = decrypted;
+            } else {
+              decodedText = record.text || parsedEnvelope.text || parsedEnvelope.fallbackText || decrypted || '';
+            }
+          } catch {
+            decodedText = record.text || parsedEnvelope.text || parsedEnvelope.fallbackText || '';
+          }
+        } else if (parsedEnvelope?.text) {
+          decodedText = record.text || parsedEnvelope.text;
         }
       } catch {}
     } else if (record.ciphertext && record.iv) {
@@ -493,21 +594,48 @@ export default function App() {
           senderPubJwk || peerPubKeysRef.current[contactId],
           seed
         );
-        decodedText = await decryptMessageText(record.ciphertext, record.iv, aesKey);
+        const decrypted = await decryptMessageText(record.ciphertext, record.iv, aesKey);
+        if (decrypted && !decrypted.startsWith('🔒 Encrypted message')) {
+          decodedText = decrypted;
+        }
       } catch {}
     }
+
+    const resolvedAudioUrl =
+      record.audio_url ||
+      parsedEnvelope?.audio_url ||
+      (record.media_type === 'audio' ? record.media_url : null);
+    const resolvedAudioDuration = record.audio_duration || parsedEnvelope?.audio_duration || record.duration || null;
+    const resolvedIsHd = Boolean(record.is_hd || parsedEnvelope?.is_hd);
+    const resolvedSenderName = record.sender_name || parsedEnvelope?.sender_name || null;
+    const resolvedSenderUsername = record.sender_username || parsedEnvelope?.sender_username || null;
+    const isAlreadyInState = chatsRef.current.some(
+      (c) => (c.id === contactId || c.recipientId === contactId) && c.messages.some((m) => m.id === record.id)
+    );
 
     const formattedMsg = {
       id: record.id,
       isSender: isMySentEcho,
-      text: record.deleted_for_everyone ? 'This message was deleted' : decodedText,
+      senderId: record.sender_id || null,
+      senderName: resolvedSenderName,
+      senderUsername: resolvedSenderUsername,
+      text: record.deleted_for_everyone ? 'This message was deleted' : (decodedText || record.text || ''),
+      content: decodedText || record.text || '',
       image: record.deleted_for_everyone ? null : (record.media_type === 'image' ? record.media_url : null),
-      mediaUrl: record.deleted_for_everyone ? null : record.media_url,
-      mediaType: record.media_type,
+      is_hd: resolvedIsHd,
+      mediaUrl: record.deleted_for_everyone ? null : (resolvedAudioUrl || record.media_url),
+      mediaType: resolvedAudioUrl ? 'audio' : record.media_type,
+      audio_url: record.deleted_for_everyone ? null : resolvedAudioUrl,
+      audio_duration: resolvedAudioDuration,
+      duration: resolvedAudioDuration,
       attachment: record.attachment || null,
-      fileName: record.fileName || null,
-      fileSize: record.fileSize || null,
-      youtubeVideo: record.youtubeVideo || null,
+      fileName: record.fileName || parsedEnvelope?.fileName || null,
+      fileSize: record.fileSize || parsedEnvelope?.fileSize || null,
+      fileExt: record.fileExt || parsedEnvelope?.fileExt || null,
+      youtubeVideo: record.youtubeVideo || parsedEnvelope?.youtubeVideo || null,
+      isCallLog: Boolean(record.isCallLog || parsedEnvelope?.isCallLog),
+      callType: record.callType || parsedEnvelope?.callType || null,
+      callDurationText: record.callDurationText || parsedEnvelope?.callDurationText || null,
       time: new Date(record.created_at || Date.now()).toLocaleTimeString([], {
         hour: 'numeric',
         minute: '2-digit',
@@ -519,29 +647,51 @@ export default function App() {
       deletedForEveryone: Boolean(record.deleted_for_everyone),
     };
 
+    const existingChat = chatsRef.current.find(
+      (c) =>
+        c.recipientId === contactId ||
+        c.id === contactId ||
+        (resolvedSenderUsername && c.handle?.toLowerCase() === resolvedSenderUsername.toLowerCase())
+    );
+    const otherPartyDisplayName = isIncomingForMe
+      ? (resolvedSenderName || existingChat?.name || 'Nexo Peer')
+      : (existingChat?.name || record.receiver_name || 'Nexo Peer');
+
     setChats((prevChats) => {
       const chatIndex = prevChats.findIndex(
         (c) =>
           c.recipientId === contactId ||
           c.id === contactId ||
-          (record.sender_username && c.handle?.toLowerCase() === record.sender_username.toLowerCase())
+          (resolvedSenderUsername && c.handle?.toLowerCase() === resolvedSenderUsername.toLowerCase())
       );
       if (chatIndex >= 0) {
         return prevChats.map((c, idx) => {
           if (idx !== chatIndex) return c;
           const nextPubJwk = senderPubJwk || c.e2eePubJwk || null;
+          const nextName =
+            isIncomingForMe && resolvedSenderName && resolvedSenderName !== userRef.current?.name
+              ? resolvedSenderName
+              : c.name;
+          const nextHandle =
+            isIncomingForMe && resolvedSenderUsername && resolvedSenderUsername !== userRef.current?.username
+              ? resolvedSenderUsername
+              : c.handle;
           const alreadyHas = c.messages.some((m) => m.id === formattedMsg.id);
           if (alreadyHas) {
             return {
               ...c,
+              name: nextName,
+              handle: nextHandle,
               e2eePubJwk: nextPubJwk,
               messages: c.messages.map((m) => (m.id === formattedMsg.id ? { ...m, ...formattedMsg } : m)),
             };
           }
           return {
             ...c,
+            name: nextName,
+            handle: nextHandle,
             e2eePubJwk: nextPubJwk,
-            unreadCount: (isIncomingForMe && !isCurrentlyOpen) ? (c.unreadCount || 0) + 1 : c.unreadCount,
+            unreadCount: (isIncomingForMe && !isCurrentlyOpen && !isHistoricalSync) ? (c.unreadCount || 0) + 1 : c.unreadCount,
             messages: [...c.messages, formattedMsg],
           };
         });
@@ -549,25 +699,71 @@ export default function App() {
       const newChatObj = {
         id: contactId,
         recipientId: contactId,
-        name: record.sender_name || 'Nexo Peer',
-        handle: record.sender_username || `@peer_${contactId.slice(0, 5)}`,
+        name: otherPartyDisplayName,
+        handle: resolvedSenderUsername || record.receiver_username || `@peer_${String(contactId).slice(0, 5)}`,
         bio: 'Nexo E2EE Peer',
         e2eePubJwk: senderPubJwk || null,
         folder: 'all',
         status: 'accepted',
         online: true,
-        unreadCount: isIncomingForMe && !isCurrentlyOpen ? 1 : 0,
+        unreadCount: isIncomingForMe && !isCurrentlyOpen && !isHistoricalSync ? 1 : 0,
         lastSeen: 'Active now',
         messages: [formattedMsg],
       };
       return [prevChats[0], newChatObj, ...prevChats.slice(1)];
     });
+
+    // Trigger sound, in-app toast & browser Notification when incoming & unseen
+    if (!isHistoricalSync && isIncomingForMe && !isAlreadyInState) {
+      const shouldNotify =
+        (typeof document !== 'undefined' && document.hidden) || !isCurrentlyOpen;
+      if (shouldNotify) {
+        playMessageChime();
+        const previewBody =
+          formattedMsg.text ||
+          (formattedMsg.audio_url ? 'Voice message' : formattedMsg.image ? 'Sent an image' : 'New message');
+        triggerIncomingBrowserNotification({
+          title: otherPartyDisplayName,
+          body: previewBody,
+          onClick: () => handleSelectChat(contactId),
+        });
+        setIncomingToastBanner({
+          id: formattedMsg.id,
+          chatId: contactId,
+          senderName: otherPartyDisplayName,
+          senderHandle: resolvedSenderUsername || '',
+          text: previewBody,
+        });
+        setTimeout(() => {
+          setIncomingToastBanner((curr) => (curr?.id === formattedMsg.id ? null : curr));
+        }, 5000);
+      }
+    }
   }, []);
 
+  // Load historical messages from Supabase & attach stable Realtime channels ONCE (no auto-refresh cascade)
   useEffect(() => {
-    if (!user?.id) return;
+    requestNotificationPermission();
+
+    const currentUserId = userRef.current?.id;
+    if (currentUserId && isValidUUID(currentUserId)) {
+      supabase
+        .from('messages')
+        .select('*')
+        .or(`sender_id.eq.${currentUserId},receiver_id.eq.${currentUserId}`)
+        .order('created_at', { ascending: true })
+        .limit(200)
+        .then(({ data }) => {
+          if (Array.isArray(data) && data.length > 0) {
+            data.forEach((row) => handleIncomingMessageRecord(row, { isHistorical: true }));
+          }
+        })
+        .catch(() => {});
+    }
+
     const channel = supabase.channel('realtime-messages');
     const nexoDbChannel = supabase.channel('nexo-db');
+    const callSignalingChannel = supabase.channel('nexo-call-signaling');
 
     channel
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
@@ -578,6 +774,19 @@ export default function App() {
       })
       .on('broadcast', { event: 'call-offer' }, ({ payload }) => {
         if (payload?.recipientId === userRef.current?.id && payload?.caller?.id !== userRef.current?.id) {
+          setIncomingCall(payload);
+        }
+      })
+      .subscribe();
+
+    callSignalingChannel
+      .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
+        const myId = userRef.current?.id;
+        const myHandle = userRef.current?.username?.toLowerCase();
+        const matchesMe =
+          payload?.recipientId === myId ||
+          (payload?.recipientHandle && payload.recipientHandle.toLowerCase() === myHandle);
+        if (matchesMe && payload?.caller?.id !== myId) {
           setIncomingCall(payload);
         }
       })
@@ -602,7 +811,13 @@ export default function App() {
                 c.recipientId === payload.peerId ||
                 c.handle?.toLowerCase() === payload.peerHandle?.toLowerCase()
             );
-            if (exists) return prev;
+            if (exists) {
+              return prev.map((c) =>
+                c.recipientId === payload.peerId || c.handle?.toLowerCase() === payload.peerHandle?.toLowerCase()
+                  ? { ...c, name: payload.peerName || c.name, handle: payload.peerHandle || c.handle }
+                  : c
+              );
+            }
             const joinedPeer = {
               id: payload.peerId,
               recipientId: payload.peerId,
@@ -619,6 +834,9 @@ export default function App() {
                 {
                   id: `m_join_${Date.now()}`,
                   isSender: false,
+                  senderId: payload.peerId,
+                  senderName: payload.peerName,
+                  senderUsername: payload.peerHandle,
                   text: `🔒 ${payload.peerName} (${payload.peerHandle}) joined via your Nexo invite link! Messages are end-to-end encrypted.`,
                   time: new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase(),
                   read: false,
@@ -650,10 +868,20 @@ export default function App() {
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(nexoDbChannel);
+      supabase.removeChannel(callSignalingChannel);
       realtimeChannelRef.current = null;
       nexoDbChannelRef.current = null;
     };
-  }, [user?.id, handleIncomingMessageRecord]);
+  }, []);
+
+  // Ringtone while Incoming Call Modal is active
+  useEffect(() => {
+    if (!incomingCall) return;
+    const stopRingtone = startIncomingRingtone();
+    return () => {
+      stopRingtone?.();
+    };
+  }, [incomingCall]);
 
   // Selected chat
   const activeChat = useMemo(() => {
@@ -725,9 +953,45 @@ export default function App() {
     setIncomingCall(null);
   };
 
-  const handleDeclineIncomingCall = () => {
-    if (!incomingCall) return;
-    setIncomingCall(null);
+  const handleEndCallWithSummary = (summary) => {
+    setActiveCall(null);
+    if (!summary || summary.durationSeconds === undefined) return;
+    const targetChatId =
+      summary.chatId ||
+      chatsRef.current.find(
+        (c) =>
+          c.id === summary.contact?.id ||
+          c.recipientId === summary.contact?.recipientId ||
+          (summary.contact?.handle && c.handle?.toLowerCase() === summary.contact.handle.toLowerCase())
+      )?.id ||
+      activeChatIdRef.current;
+
+    if (!targetChatId) return;
+
+    const secs = Math.max(0, summary.durationSeconds || 0);
+    const mins = Math.floor(secs / 60);
+    const rem = secs % 60;
+    const durationText = `${mins.toString().padStart(2, '0')}:${rem.toString().padStart(2, '0')}`;
+    const callTypeLabel = summary.type === 'video' ? 'Video call' : 'Voice call';
+    const nowTime = new Date().toLocaleTimeString([], { hour: 'numeric', minute: '2-digit', hour12: true }).toLowerCase();
+
+    const callLogMsg = {
+      id: `m_call_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
+      isSender: true,
+      senderId: userRef.current?.id,
+      senderName: userRef.current?.name,
+      senderUsername: userRef.current?.username,
+      isCallLog: true,
+      callType: summary.type || 'voice',
+      callDurationText: durationText,
+      text: `${callTypeLabel} (${durationText})`,
+      time: nowTime,
+      read: true,
+    };
+
+    setChats((prev) =>
+      prev.map((c) => (c.id === targetChatId ? { ...c, messages: [...c.messages, callLogMsg] } : c))
+    );
   };
 
   // Start new chat with peer via @username (no phone number exposed)
@@ -1075,8 +1339,13 @@ export default function App() {
   };
 
   const handleResetWorkspace = () => {
-    setUser(DEFAULT_STUDENT_PROFILE);
-    const freshChats = createCampusWorkspaceChats(DEFAULT_STUDENT_PROFILE);
+    const freshUser = { ...DEFAULT_STUDENT_PROFILE, id: getOrCreateBrowserUserId() };
+    setUser(freshUser);
+    try {
+      localStorage.setItem('nexo_user', JSON.stringify(freshUser));
+      localStorage.removeItem('nexo_invite_profile_done');
+    } catch {}
+    const freshChats = createCampusWorkspaceChats(freshUser);
     setChats(freshChats);
     setBookmarkedVault(INITIAL_BOOKMARKS);
     setIsSettingsOpen(false);
@@ -1091,9 +1360,12 @@ export default function App() {
     const isString = typeof payload === 'string';
     const text = isString ? payload : (payload.text || '');
     const image = !isString ? (payload.image || payload.mediaUrl || null) : null;
+    const is_hd = !isString ? Boolean(payload.is_hd) : false;
     const quote = !isString ? (payload.quote || null) : null;
     const attachment = !isString ? (payload.attachment || null) : null;
-    const mediaType = !isString ? (payload.mediaType || (image ? 'image' : null)) : null;
+    const audio_url = !isString ? (payload.audio_url || (payload.mediaType === 'audio' ? (payload.mediaUrl || payload.attachment) : null)) : null;
+    const audio_duration = !isString ? (payload.audio_duration || payload.duration || null) : null;
+    const mediaType = !isString ? (payload.mediaType || (audio_url ? 'audio' : image ? 'image' : null)) : null;
     const fileName = !isString ? (payload.fileName || null) : null;
     const fileSize = !isString ? (payload.fileSize || null) : null;
     const fileExt = !isString ? (payload.fileExt || null) : null;
@@ -1110,10 +1382,19 @@ export default function App() {
     const newMsg = {
       id: `m_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       isSender: true,
+      senderId: userRef.current?.id || null,
+      senderName: userRef.current?.name || 'Nexo Peer',
+      senderUsername: userRef.current?.username || '@peer',
       text,
+      content: text,
       image,
+      is_hd,
       quote,
       attachment,
+      audio_url,
+      audio_duration,
+      duration: audio_duration,
+      mediaUrl: audio_url || image || attachment || null,
       mediaType,
       fileName,
       fileSize,
@@ -1147,6 +1428,16 @@ export default function App() {
           alg: 'AES-GCM-256',
           iv: encrypted.iv,
           ciphertext: encrypted.ciphertext,
+          text: text || '',
+          sender_name: userRef.current?.name,
+          sender_username: userRef.current?.username,
+          audio_url: audio_url || null,
+          audio_duration: audio_duration || null,
+          is_hd,
+          fileName: fileName || null,
+          fileSize: fileSize || null,
+          fileExt: fileExt || null,
+          youtubeVideo: youtubeVideo || null,
           senderPubJwk: myKeysRef.current?.publicJwk || null,
         });
 
@@ -1156,10 +1447,18 @@ export default function App() {
           sender_name: userRef.current?.name,
           sender_username: userRef.current?.username,
           receiver_id: recipientId,
+          receiver_name: targetChat.name || null,
           receiver_username: targetChat.handle || null,
+          text,
           content: e2eeEnvelope,
-          media_url: image || attachment || null,
+          media_url: audio_url || image || attachment || null,
           media_type: mediaType || null,
+          audio_url: audio_url || null,
+          audio_duration: audio_duration || null,
+          is_hd,
+          fileName: fileName || null,
+          fileSize: fileSize || null,
+          fileExt: fileExt || null,
           youtubeVideo: youtubeVideo || null,
           status: 'sent',
           created_at: new Date().toISOString(),
@@ -1177,7 +1476,7 @@ export default function App() {
             sender_id: userRef.current.id,
             receiver_id: recipientId,
             content: e2eeEnvelope,
-            media_url: image || null,
+            media_url: audio_url || image || null,
             media_type: mediaType || null,
             status: 'sent',
           });
@@ -1217,6 +1516,8 @@ export default function App() {
 
   const handleSelectChat = (id) => {
     setActiveChatId(id);
+    requestNotificationPermission();
+    setIncomingToastBanner((curr) => (curr?.chatId === id ? null : curr));
     setChats((prev) =>
       prev.map((c) =>
         c.id === id
@@ -1224,6 +1525,23 @@ export default function App() {
           : c
       )
     );
+    const currentUserId = userRef.current?.id;
+    const selectedChat = chatsRef.current.find((c) => c.id === id);
+    const peerId = selectedChat?.recipientId || id;
+    if (isValidUUID(currentUserId) && isValidUUID(peerId)) {
+      supabase
+        .from('messages')
+        .select('*')
+        .or(`and(sender_id.eq.${currentUserId},receiver_id.eq.${peerId}),and(sender_id.eq.${peerId},receiver_id.eq.${currentUserId})`)
+        .order('created_at', { ascending: true })
+        .limit(100)
+        .then(({ data }) => {
+          if (Array.isArray(data) && data.length > 0) {
+            data.forEach((row) => handleIncomingMessageRecord(row, { isHistorical: true }));
+          }
+        })
+        .catch(() => {});
+    }
   };
 
   // App Lock Passcode Screen (when manually locked via Settings)
@@ -1271,14 +1589,13 @@ export default function App() {
             </p>
           </div>
         </div>
-      ) : activeNavTab === 'updates' ? (
-        <StatusView
-          user={user}
+      ) : activeNavTab === 'hub' ? (
+        <MobileHubView
           chats={chats}
           onSendMessageToChat={sendMessageToChat}
           onSaveToVault={handleSaveSummaryToVault}
           onShowToast={showToast}
-          initialSubTab={updatesSubTab}
+          initialSubTab={hubSubTab}
           workspaceInitialTab={workspaceInitialTab}
         />
       ) : activeNavTab === 'communities' ? (
@@ -1353,7 +1670,7 @@ export default function App() {
               onOpenStarredMessages={() => setIsStarredOpen(true)}
               onOpenSettings={() => setIsSettingsOpen(true)}
               onNewCommunity={() => setActiveNavTab('communities')}
-              onNewUpdates={() => setActiveNavTab('updates')}
+              onNewUpdates={() => openHubTab('workspace')}
               onOpenWorkspace={() => openHubTab('workspace')}
               onOpenPrep={() => openHubTab('prep')}
               onOpenYouTube={() => openHubTab('youtube')}
@@ -1493,7 +1810,7 @@ export default function App() {
             </p>
             <div className="flex items-center gap-6 mt-6">
               <button
-                onClick={handleDeclineIncomingCall}
+                onClick={() => setIncomingCall(null)}
                 className="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg cursor-pointer active:scale-95 transition-transform"
               >
                 <PhoneOff className="w-6 h-6" />
@@ -1513,9 +1830,149 @@ export default function App() {
         <CallModal
           call={activeCall}
           currentUser={user}
-          onEndCall={() => setActiveCall(null)}
+          onEndCall={handleEndCallWithSummary}
           onSaveCallRecording={handleSaveCallRecording}
         />
+      )}
+
+      {/* Join Nexo Chat Onboarding Modal (when opening friend's ?connect= invite link) */}
+      {joinInviteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
+          <form
+            onSubmit={async (e) => {
+              e.preventDefault();
+              const cleanName = joinNameDraft.trim();
+              const cleanRawHandle = joinUsernameDraft.trim().toLowerCase().replace(/^@+/, '').replace(/\s+/g, '_');
+              if (!cleanName || !cleanRawHandle) return;
+              const cleanHandle = `@${cleanRawHandle}`;
+              const uniqueId = getOrCreateBrowserUserId();
+              const nextUser = {
+                ...userRef.current,
+                id: uniqueId,
+                name: cleanName,
+                username: cleanHandle,
+              };
+              try {
+                localStorage.setItem('nexo_user', JSON.stringify(nextUser));
+                localStorage.setItem('nexo_invite_profile_done', '1');
+              } catch {}
+              handleUpdateUser(nextUser);
+
+              try {
+                await supabase.from('profiles').upsert({
+                  id: uniqueId,
+                  username: cleanHandle,
+                  full_name: cleanName,
+                  avatar_url: nextUser.avatar || '',
+                  mood: nextUser.bio || 'Nexo E2EE Peer',
+                  focus_reply: JSON.stringify({ e2eePubJwk: myKeysRef.current?.publicJwk || null }),
+                  updated_at: new Date().toISOString(),
+                });
+              } catch {}
+
+              const inviter = joinInviteModal.inviterContact;
+              nexoDbChannelRef.current?.send({
+                type: 'broadcast',
+                event: 'peer-connect',
+                payload: {
+                  peerId: uniqueId,
+                  peerName: cleanName,
+                  peerHandle: cleanHandle,
+                  publicJwk: myKeysRef.current?.publicJwk || null,
+                  inviterHandle: inviter.handle,
+                  targetUserId: inviter.recipientId,
+                },
+              });
+
+              setJoinInviteModal(null);
+              handleStartChatWith(inviter);
+              showToast(`Joined as ${cleanName} (${cleanHandle})`);
+            }}
+            className="w-full max-w-sm bg-white dark:bg-[#111b21] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-[#222e35] space-y-4"
+          >
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-2xl bg-[#00a884]/15 text-[#00a884] flex items-center justify-center flex-shrink-0">
+                <UserPlus className="w-5 h-5" />
+              </div>
+              <div>
+                <h3 className="text-[17px] font-bold text-[#111b21] dark:text-[#e9edef]">
+                  Join Nexo Chat
+                </h3>
+                <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0]">
+                  Connect with {joinInviteModal.inviterContact?.name} ({joinInviteModal.inviterContact?.handle})
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-3">
+              <div>
+                <label className="text-[11.5px] font-semibold text-[#54656f] dark:text-[#8696a0] uppercase tracking-wider block mb-1">
+                  Your Display Name
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={joinNameDraft}
+                  onChange={(e) => setJoinNameDraft(e.target.value)}
+                  placeholder="e.g., Rahul Sharma"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-[14px] text-[#111b21] dark:text-[#e9edef] border border-transparent focus:border-[#00a884] focus:outline-none"
+                />
+              </div>
+              <div>
+                <label className="text-[11.5px] font-semibold text-[#54656f] dark:text-[#8696a0] uppercase tracking-wider block mb-1">
+                  Your @username
+                </label>
+                <input
+                  type="text"
+                  required
+                  value={joinUsernameDraft}
+                  onChange={(e) => setJoinUsernameDraft(e.target.value)}
+                  placeholder="e.g., rahul_cse"
+                  className="w-full px-3.5 py-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-[14px] text-[#111b21] dark:text-[#e9edef] border border-transparent focus:border-[#00a884] focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              className="w-full py-2.5 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white font-semibold text-[14px] shadow-md transition-colors cursor-pointer"
+            >
+              Start Encrypted Chat
+            </button>
+          </form>
+        </div>
+      )}
+
+      {/* Top-Right Clickable In-App Incoming Message Toast Banner */}
+      {incomingToastBanner && (
+        <button
+          type="button"
+          onClick={() => {
+            handleSelectChat(incomingToastBanner.chatId);
+            setActiveNavTab('chats');
+            setIncomingToastBanner(null);
+          }}
+          className="fixed top-4 right-4 z-50 max-w-xs sm:max-w-sm bg-white dark:bg-[#202c33] border border-[#00a884]/40 rounded-2xl p-3.5 shadow-2xl flex items-start gap-3 text-left animate-fadeIn cursor-pointer hover:border-[#00a884] transition-all"
+        >
+          <div className="w-9 h-9 rounded-full bg-[#00a884]/15 text-[#00a884] flex items-center justify-center flex-shrink-0">
+            <Bell className="w-4 h-4" />
+          </div>
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-[13.5px] font-bold text-[#111b21] dark:text-[#e9edef] truncate">
+                {incomingToastBanner.senderName}
+              </span>
+              {incomingToastBanner.senderHandle && (
+                <span className="text-[11px] text-[#00a884] font-medium flex-shrink-0">
+                  {incomingToastBanner.senderHandle}
+                </span>
+              )}
+            </div>
+            <p className="text-[12.5px] text-[#54656f] dark:text-[#aebac1] line-clamp-2 mt-0.5">
+              {incomingToastBanner.text}
+            </p>
+          </div>
+        </button>
       )}
 
       {showSummarizeModal && activeChat && (

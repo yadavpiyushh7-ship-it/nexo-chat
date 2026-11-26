@@ -524,9 +524,9 @@ export default function WorkspaceHubView({
   });
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-[#f0f2f5] dark:bg-[#0c1317] select-none overflow-hidden">
+    <div className="flex-1 h-full flex flex-col bg-[#f0f2f5] dark:bg-[#0b141a] select-none overflow-hidden">
       {/* Balanced Two-Column Header: Left Title/Status/Tabs | Right Aesthetic Continue with Google Bar */}
-      <div className="min-h-[68px] px-4 sm:px-6 py-2.5 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+      <div className="min-h-[68px] px-4 sm:px-6 py-2.5 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#222e35] flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
         {/* Left Column: Title, API Status & Sub-Tab Switcher */}
         <div className="flex flex-wrap items-center gap-4 min-w-0">
           <div className="min-w-0">
@@ -633,19 +633,6 @@ export default function WorkspaceHubView({
           )}
         </div>
       </div>
-
-      {/* Inline OAuth Configuration / Error Strip (only when triggered) */}
-      {authError && (
-        <div className="px-4 sm:px-6 py-2 bg-amber-500/10 border-b border-amber-500/20 flex items-center justify-between gap-2 text-[12px] text-amber-800 dark:text-amber-300">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-4 h-4 flex-shrink-0" />
-            <span>{authError}</span>
-          </div>
-          <button type="button" onClick={clearAuthError} className="p-1 cursor-pointer">
-            <X className="w-3.5 h-3.5" />
-          </button>
-        </div>
-      )}
 
       {/* Main Content */}
       {activeTab === 'gmail' ? (

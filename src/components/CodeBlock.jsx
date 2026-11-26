@@ -109,6 +109,48 @@ export function parseMessageSegments(text) {
   return segments;
 }
 
+/**
+ * Renders WhatsApp-style inline rich text: *bold*, _italic_, ~strikethrough~, `inline code`
+ */
+export function renderFormattedInlineText(text) {
+  if (!text) return null;
+  const pattern = /(\*[^*\n]+\*|_[^_\n]+_|~[^~\n]+~|`[^`\n]+`)/g;
+  const parts = [];
+  let lastIdx = 0;
+  let match;
+  let key = 0;
+
+  while ((match = pattern.exec(text)) !== null) {
+    if (match.index > lastIdx) {
+      parts.push(<React.Fragment key={`t_${key++}`}>{text.slice(lastIdx, match.index)}</React.Fragment>);
+    }
+    const token = match[0];
+    const inner = token.slice(1, -1);
+    if (token.startsWith('*')) {
+      parts.push(<strong key={`b_${key++}`} className="font-bold">{inner}</strong>);
+    } else if (token.startsWith('_')) {
+      parts.push(<em key={`i_${key++}`} className="italic">{inner}</em>);
+    } else if (token.startsWith('~')) {
+      parts.push(<del key={`s_${key++}`} className="line-through opacity-80">{inner}</del>);
+    } else if (token.startsWith('`')) {
+      parts.push(
+        <code
+          key={`c_${key++}`}
+          className="px-1.5 py-0.5 rounded bg-black/10 dark:bg-white/15 font-mono text-[12.5px]"
+        >
+          {inner}
+        </code>
+      );
+    }
+    lastIdx = pattern.lastIndex;
+  }
+
+  if (lastIdx < text.length) {
+    parts.push(<React.Fragment key={`t_${key++}`}>{text.slice(lastIdx)}</React.Fragment>);
+  }
+  return parts;
+}
+
 export default function CodeBlock({ language = 'cpp', code = '', onExplainCode }) {
   const [copied, setCopied] = useState(false);
 

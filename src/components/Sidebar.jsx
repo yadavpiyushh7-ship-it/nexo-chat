@@ -22,7 +22,8 @@ import {
   GraduationCap,
   BellOff,
   SlidersHorizontal,
-  Camera
+  Camera,
+  Lock
 } from 'lucide-react';
 import AvatarIcon from './AvatarIcon';
 import NexoLogo from './NexoLogo';
@@ -94,43 +95,36 @@ export default function Sidebar({
   const folderLabelMap = {
     all: t('all'),
     unread: t('unread'),
-    favourites: t('favourites'),
+    favourites: 'Favorites',
     groups: t('groups'),
-    friends: t('friends'),
-    requests: t('requests'),
   };
 
   return (
-    <aside className="w-full md:w-[360px] lg:w-[390px] h-full flex flex-col bg-white dark:bg-[#111b21] border-r border-[#d1d7db] dark:border-[#2a3942] select-none flex-shrink-0 transition-colors font-sans">
-      {/* 1. Top Header: Official Nexo Logo on Mobile (< 768px), Branding on Desktop */}
-      <div className="h-[60px] px-3.5 sm:px-4 flex items-center justify-between border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 bg-[#f0f2f5] dark:bg-[#202c33] flex-shrink-0 relative">
+    <aside className="w-full md:w-[360px] lg:w-[390px] h-full flex flex-col bg-white dark:bg-[#111b21] border-r border-[#e9edef] dark:border-[#222e35] select-none flex-shrink-0 transition-colors duration-150">
+      {/* 1. Top Header: Clean Nexo Wordmark */}
+      <div className="h-[60px] px-3.5 sm:px-4 flex items-center justify-between border-b border-[#e9edef] dark:border-[#222e35] bg-white dark:bg-[#111b21] flex-shrink-0 relative">
         {viewingArchived ? (
           <div className="flex items-center gap-3">
             <button
               onClick={() => setViewingArchived(false)}
-              className="p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-[#54656f] dark:text-[#aebac1] transition-colors cursor-pointer"
+              className="p-1.5 rounded-full hover:bg-[#f0f2f5] dark:hover:bg-[#202c33] text-[#54656f] dark:text-[#aebac1] cursor-pointer"
               title={t('back')}
             >
               <ArrowLeft className="w-5 h-5" />
             </button>
-            <h2 className="text-[17px] font-bold text-[#111b21] dark:text-white">
+            <h2 className="text-[17px] font-bold text-[#111b21] dark:text-[#e9edef]">
               Archived ({archivedChats.length})
             </h2>
           </div>
         ) : (
           <div className="flex items-center gap-2">
-            {/* Mobile (< 768px): Official Nexo bubble logo icon replacing text title */}
             <div className="flex md:hidden items-center">
               <NexoLogo size={32} />
             </div>
-            {/* Desktop (>= 768px) */}
             <div className="hidden md:flex items-center gap-2">
-              <h1 className="text-[20px] font-bold text-[#111b21] dark:text-white tracking-tight">
+              <h1 className="text-[20px] font-bold text-[#00a884] tracking-tight">
                 Nexo
               </h1>
-              <span className="px-2 py-0.5 rounded-full bg-[#0055ff]/10 text-[#0055ff] dark:text-sky-400 text-[10.5px] font-bold">
-                JECRC CSE
-              </span>
             </div>
           </div>
         )}
@@ -198,17 +192,6 @@ export default function Sidebar({
                 >
                   <Users className="w-4 h-4 text-[#0055ff]" />
                   <span>{t('newChatTitle')}</span>
-                </button>
-
-                <button
-                  onClick={() => {
-                    onNewUpdates?.();
-                    setHeaderMenuOpen(false);
-                  }}
-                  className="w-full px-4 py-2.5 flex items-center gap-3 text-[#111b21] dark:text-[#e9edef] hover:bg-[#f0f2f5] dark:hover:bg-[#111b21] text-left cursor-pointer md:hidden"
-                >
-                  <GraduationCap className="w-4 h-4 text-[#00a884]" />
-                  <span>{t('updates')}</span>
                 </button>
 
                 <button
@@ -285,7 +268,7 @@ export default function Sidebar({
       </div>
 
       {/* 2. Search Bar */}
-      <div className="px-3 pt-2.5 pb-2 border-b border-[#d1d7db]/40 dark:border-[#2a3942]/40">
+      <div className="px-3 pt-2.5 pb-2 border-b border-[#e9edef] dark:border-[#222e35]">
         <div className="relative">
           <Search className="w-4 h-4 absolute left-3.5 top-1/2 -translate-y-1/2 text-[#54656f] dark:text-[#8696a0]" />
           <input
@@ -294,29 +277,29 @@ export default function Sidebar({
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
             placeholder={t('searchPlaceholder')}
-            className="w-full pl-10 pr-4 py-2 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[13.5px] focus:outline-none focus:ring-1 focus:ring-[#0055ff] transition-all"
+            className="w-full pl-10 pr-4 py-2 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] placeholder-[#667781] dark:placeholder-[#8696a0] text-[13.5px] focus:outline-none focus:ring-1 focus:ring-[#00a884] transition-all"
           />
         </div>
       </div>
 
       {/* 3. Smart Strip */}
       {!viewingArchived && (
-        <div className="px-3 py-2 border-b border-[#d1d7db]/50 dark:border-[#2a3942]/50 flex items-center gap-2 bg-[#fcf5eb]/40 dark:bg-[#182229]/40">
+        <div className="px-3 py-2 border-b border-[#e9edef] dark:border-[#222e35] flex items-center gap-2 bg-white dark:bg-[#111b21]">
           {focusMode ? (
             <button
               onClick={() => {
                 setStatusDraft(studyStatus || '');
                 setShowStudyStatusPopover(!showStudyStatusPopover);
               }}
-              className="flex-1 py-1.5 px-3 rounded-full text-[11.5px] font-semibold bg-[#0055ff]/10 text-[#0055ff] dark:text-sky-400 flex items-center justify-between gap-1.5 cursor-pointer truncate"
+              className="flex-1 py-1.5 px-3 rounded-full text-[11.5px] font-semibold bg-[#00a884]/10 text-[#00a884] flex items-center justify-between gap-1.5 cursor-pointer truncate"
             >
-              <span className="truncate">📚 {studyStatus}</span>
+              <span className="truncate">{studyStatus}</span>
               <SlidersHorizontal className="w-3 h-3 flex-shrink-0" />
             </button>
           ) : (
             <button
               onClick={onOpenStarredMessages}
-              className="flex-1 py-1.5 px-3 rounded-full text-[12px] font-semibold bg-[#f0f2f5] dark:bg-[#202c33] hover:bg-[#e9edef] dark:hover:bg-[#2a3942] text-[#54656f] dark:text-[#aebac1] flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs"
+              className="flex-1 py-1.5 px-3 rounded-full text-[12px] font-medium bg-[#f0f2f5] dark:bg-[#202c33] hover:bg-[#e9edef] dark:hover:bg-[#2a3942] text-[#54656f] dark:text-[#aebac1] flex items-center justify-center gap-1.5 cursor-pointer"
             >
               <Star className="w-3.5 h-3.5 text-amber-500 fill-amber-500" />
               <span>{t('resourceVault')}</span>
@@ -325,10 +308,10 @@ export default function Sidebar({
 
           <button
             onClick={onOpenScheduledQueue}
-            className="py-1.5 px-3 rounded-full text-[12px] font-semibold bg-[#f0f2f5] dark:bg-[#202c33] hover:bg-[#e9edef] dark:hover:bg-[#2a3942] text-[#54656f] dark:text-[#aebac1] flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+            className="py-1.5 px-3 rounded-full text-[12px] font-medium bg-[#f0f2f5] dark:bg-[#202c33] hover:bg-[#e9edef] dark:hover:bg-[#2a3942] text-[#54656f] dark:text-[#aebac1] flex items-center gap-1.5 cursor-pointer"
           >
-            <Clock className="w-3.5 h-3.5 text-[#0055ff]" />
-            <span>{t('scheduled')}: <strong className="text-[#0055ff] dark:text-sky-400">{scheduledCount}</strong></span>
+            <Clock className="w-3.5 h-3.5 text-[#00a884]" />
+            <span>{t('scheduled')}: <strong className="font-numeric text-[#00a884]">{scheduledCount}</strong></span>
           </button>
         </div>
       )}
@@ -354,18 +337,18 @@ export default function Sidebar({
         </form>
       )}
 
-      {/* 4. Filter Chips */}
+      {/* 4. Filter Chips (All, Unread, Favorites, Groups) */}
       {!viewingArchived && (
-        <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-[#d1d7db]/40 dark:border-[#2a3942]/40">
+        <div className="px-3 py-2 flex items-center gap-1.5 overflow-x-auto no-scrollbar border-b border-[#e9edef] dark:border-[#222e35]">
           {folders.map((folder) => {
             const isActive = activeFolder === folder.id;
             return (
               <button
                 key={folder.id}
                 onClick={() => setActiveFolder(folder.id)}
-                className={`px-3 py-1 text-[13px] font-medium rounded-full transition-all whitespace-nowrap cursor-pointer ${
+                className={`px-3 py-1 text-[13px] font-medium rounded-full whitespace-nowrap cursor-pointer ${
                   isActive
-                    ? 'bg-[#d9fdd3] dark:bg-[#103629] text-[#00a884] dark:text-[#25d366] shadow-xs font-semibold'
+                    ? 'bg-[#d9fdd3] dark:bg-[#005c4b] text-[#008069] dark:text-[#25d366] font-semibold'
                     : 'bg-[#f0f2f5] dark:bg-[#202c33] text-[#54656f] dark:text-[#8696a0] hover:bg-[#e9edef] dark:hover:bg-[#2a3942]'
                 }`}
               >
@@ -393,7 +376,7 @@ export default function Sidebar({
       )}
 
       {/* 6. Chat List */}
-      <div className="flex-1 overflow-y-auto divide-y divide-[#d1d7db]/20 dark:divide-[#2a3942]/30 relative pb-16 md:pb-0">
+      <div className="flex-1 overflow-y-auto divide-y divide-[#e9edef]/70 dark:divide-[#222e35] relative pb-16 md:pb-0">
         {displayChats.length === 0 ? (
           <div className="p-8 h-full flex flex-col items-center justify-center text-center">
             <div className="w-16 h-16 rounded-3xl bg-[#0055ff]/10 text-[#0055ff] flex items-center justify-center mb-3">
@@ -458,7 +441,7 @@ export default function Sidebar({
                         <BellOff className="w-3.5 h-3.5 text-[#8696a0] inline flex-shrink-0" />
                       )}
                     </div>
-                    <span className={`text-[11px] flex-shrink-0 ${
+                    <span className={`font-numeric text-[11px] flex-shrink-0 ${
                       visibleUnread > 0 ? 'text-[#00a884] font-semibold' : 'text-[#667781] dark:text-[#8696a0]'
                     }`}>
                       {lastMsg?.time || ''}
@@ -495,10 +478,10 @@ export default function Sidebar({
 
                     <div className="flex items-center gap-1">
                       {visibleUnread > 0 && (
-                        <span className={`px-1.5 py-0.5 text-[11px] font-bold rounded-full min-w-[20px] text-center shadow-xs flex-shrink-0 ${
+                        <span className={`font-numeric px-1.5 py-0.5 text-[11px] font-bold rounded-full min-w-[20px] text-center shadow-xs flex-shrink-0 ${
                           chat.isPlacementAlert
-                            ? 'bg-[#0055ff] text-white'
-                            : 'bg-[#25d366] text-[#111b21]'
+                            ? 'bg-[#00a884] text-white'
+                            : 'bg-[#00a884] text-white'
                         }`}>
                           {visibleUnread}
                         </span>
@@ -612,6 +595,15 @@ export default function Sidebar({
             );
           })
         )}
+
+        {/* Subtle E2EE Footnote below chat list */}
+        <div className="px-4 py-4 flex items-center justify-center gap-1.5 text-[11.5px] text-[#667781] dark:text-[#8696a0] border-t border-[#e9edef]/60 dark:border-[#222e35]">
+          <Lock className="w-3 h-3 text-[#00a884] flex-shrink-0" />
+          <span>
+            Your personal messages are{' '}
+            <span className="text-[#00a884] font-medium">end-to-end encrypted</span>
+          </span>
+        </div>
       </div>
       <CameraCaptureModal
         isOpen={showHeaderCameraModal}

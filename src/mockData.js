@@ -1,10 +1,8 @@
 export const INITIAL_FOLDERS = [
   { id: 'all', label: 'All' },
   { id: 'unread', label: 'Unread' },
-  { id: 'favourites', label: 'Favourites' },
+  { id: 'favourites', label: 'Favorites' },
   { id: 'groups', label: 'Groups' },
-  { id: 'friends', label: 'Friends' },
-  { id: 'requests', label: 'Requests' },
 ];
 
 export const INITIAL_ARCHIVED = [];

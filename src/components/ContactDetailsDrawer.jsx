@@ -26,9 +26,9 @@ export default function ContactDetailsDrawer({
   if (!contact) return null;
 
   return (
-    <aside className="w-full sm:w-[360px] md:w-[380px] h-full bg-white dark:bg-[#111b21] border-l border-[#d1d7db] dark:border-[#2a3942] flex flex-col z-20 flex-shrink-0 animate-fadeIn select-none font-sans">
+    <aside className="w-full sm:w-[360px] md:w-[380px] h-full bg-white dark:bg-[#111b21] border-l border-[#d1d7db] dark:border-[#222e35] flex flex-col z-20 flex-shrink-0 animate-fadeIn select-none font-sans">
       {/* Header */}
-      <div className="h-[60px] px-4 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between flex-shrink-0">
+      <div className="h-[60px] px-4 bg-[#f0f2f5] dark:bg-[#111b21] border-b border-[#d1d7db]/80 dark:border-[#222e35] flex items-center justify-between flex-shrink-0">
         <h3 className="text-[16px] font-bold text-[#111b21] dark:text-[#e9edef]">
           Chat Info & Theme
         </h3>

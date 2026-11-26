@@ -31,11 +31,14 @@ import {
   Lock,
   Youtube as YoutubeIcon,
   Languages,
-  Loader2
+  Loader2,
+  ZoomIn,
+  ZoomOut,
+  RotateCcw
 } from 'lucide-react';
 import Composer from './Composer';
 import AvatarIcon from './AvatarIcon';
-import CodeBlock, { parseMessageSegments } from './CodeBlock';
+import CodeBlock, { parseMessageSegments, renderFormattedInlineText } from './CodeBlock';
 import AiToneModal from './AiToneModal';
 import SecurityVerifyModal from './SecurityVerifyModal';
 import { getWallpaperClass } from '../lib/themeUtils';
@@ -127,7 +130,7 @@ function AudioPlayerBubble({ src, duration }) {
           />
         </div>
 
-        <div className="flex justify-between items-center text-[10.5px] text-[#667781] dark:text-[#8696a0] font-mono">
+        <div className="flex justify-between items-center text-[10.5px] text-[#667781] dark:text-[#8696a0] font-numeric">
           <span>{fmt(currentTime)}</span>
           <span>{fmt(totalDuration)}</span>
         </div>
@@ -181,6 +184,19 @@ export default function ChatWindow({
   const [playingChatVideo, setPlayingChatVideo] = useState(null);
   const [translatedMap, setTranslatedMap] = useState({});
   const [translatingMsgId, setTranslatingMsgId] = useState(null);
+  const [lightboxImage, setLightboxImage] = useState(null);
+  const [lightboxZoom, setLightboxZoom] = useState(1);
+  const [lightboxPan, setLightboxPan] = useState({ x: 0, y: 0 });
+  const [isLightboxDragging, setIsLightboxDragging] = useState(false);
+  const lightboxDragStartRef = useRef({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleEsc = (e) => {
+      if (e.key === 'Escape') setLightboxImage(null);
+    };
+    window.addEventListener('keydown', handleEsc);
+    return () => window.removeEventListener('keydown', handleEsc);
+  }, []);
 
   useEffect(() => {
     setTranslatedMap({});
@@ -272,22 +288,22 @@ export default function ChatWindow({
 
   if (!displayChat) {
     return (
-      <div className="hidden md:flex flex-1 h-full flex-col items-center justify-center p-8 bg-[#efeae2]/30 dark:bg-[#0b141a] text-center select-none font-sans">
-        <div className="w-20 h-20 rounded-3xl bg-gradient-to-tr from-[#0055ff]/15 via-[#7b2cbf]/15 to-[#d946ef]/15 text-[#0055ff] flex items-center justify-center mb-4 shadow-sm">
-          <MessageSquareDashed className="w-10 h-10" />
+      <div className="hidden md:flex flex-1 h-full flex-col items-center justify-center p-8 bg-white dark:bg-[#0b141a] text-center select-none font-sans">
+        <div className="w-16 h-16 rounded-2xl bg-[#f0f2f5] dark:bg-[#202c33] text-[#00a884] flex items-center justify-center mb-4 border border-[#e9edef] dark:border-[#222e35]">
+          <MessageSquareDashed className="w-8 h-8" />
         </div>
-        <h2 className="text-[22px] font-bold text-[#111b21] dark:text-white">
-          Nexo Placement & CSE Hub
+        <h2 className="text-[20px] font-semibold text-[#111b21] dark:text-[#e9edef]">
+          Nexo Workspace & Messaging
         </h2>
-        <p className="text-[14px] text-[#667781] dark:text-[#8696a0] max-w-sm mt-1.5 leading-relaxed">
-          Select a channel or study group to share code snippets, view placement alerts, or save resources in your Study Vault.
+        <p className="text-[13.5px] text-[#667781] dark:text-[#8696a0] max-w-sm mt-1.5 leading-relaxed">
+          Select a conversation to send end-to-end encrypted messages, code blocks, HD photos, and voice notes.
         </p>
         <button
           onClick={onNewChat}
-          className="mt-5 px-5 py-2.5 rounded-xl bg-[#0055ff] hover:bg-[#0044cc] text-white text-[13.5px] font-semibold flex items-center gap-2 shadow-md shadow-[#0055ff]/20 cursor-pointer transition-all active:scale-95"
+          className="mt-5 px-5 py-2.5 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white text-[13.5px] font-medium flex items-center gap-2 cursor-pointer active:scale-95"
         >
           <SquarePen className="w-4 h-4" />
-          <span>Message Peer by @username</span>
+          <span>Message peer by @username</span>
         </button>
       </div>
     );
@@ -296,7 +312,7 @@ export default function ChatWindow({
   return (
     <main className={`flex-1 w-full max-w-full h-full flex flex-col relative transition-colors overflow-hidden overflow-x-hidden ${wallpaperBgClass}`}>
       {/* 1. Header */}
-      <header className="h-[60px] px-3 sm:px-4 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between z-10 flex-shrink-0 select-none">
+      <header className="h-[60px] px-3 sm:px-4 bg-white dark:bg-[#111b21] border-b border-[#e9edef] dark:border-[#222e35] flex items-center justify-between z-10 flex-shrink-0 select-none">
         <div className="flex items-center gap-2 min-w-0">
           {onBackToList && (
             <button
@@ -363,7 +379,7 @@ export default function ChatWindow({
           {/* Summarize Lecture / Thread AI Button */}
           <button
             onClick={onOpenSummarize}
-            className="px-2.5 sm:px-3 py-1.5 rounded-full bg-gradient-to-r from-[#0055ff] via-[#7b2cbf] to-[#d946ef] hover:opacity-90 text-white text-[11.5px] sm:text-[12px] font-semibold shadow-sm flex items-center gap-1.5 transition-all transform active:scale-95 cursor-pointer"
+            className="px-2.5 sm:px-3 py-1.5 rounded-full bg-[#f0f2f5] dark:bg-[#202c33] hover:bg-[#e9edef] dark:hover:bg-[#2a3942] border border-[#e9edef] dark:border-[#222e35] text-[#00a884] text-[11.5px] sm:text-[12px] font-medium flex items-center gap-1.5 active:scale-95 cursor-pointer"
             title="Summarize Lecture / Thread with Gemini AI"
           >
             <Sparkles className="w-3.5 h-3.5" />
@@ -490,15 +506,15 @@ export default function ChatWindow({
           <button
             type="button"
             onClick={() => setShowSecurityModal(true)}
-            className="max-w-md px-3.5 py-2 rounded-xl bg-[#fff3c4]/90 dark:bg-[#182229] border border-amber-500/20 text-[11.5px] text-[#54656f] dark:text-[#ffd279] font-medium flex items-center gap-2 shadow-sm hover:opacity-90 transition-opacity cursor-pointer text-center"
+            className="max-w-md px-3.5 py-2 rounded-xl bg-[#f0f2f5] dark:bg-[#182229] border border-[#e9edef] dark:border-[#222e35] text-[11.5px] text-[#54656f] dark:text-[#8696a0] font-medium flex items-center gap-2 hover:opacity-90 cursor-pointer text-center"
           >
-            <Lock className="w-3.5 h-3.5 flex-shrink-0 text-amber-600 dark:text-[#ffd279]" />
+            <Lock className="w-3.5 h-3.5 flex-shrink-0 text-[#00a884]" />
             <span>{t('e2eeBanner')}</span>
           </button>
         </div>
 
         <div className="flex justify-center my-3 select-none">
-          <span className="px-3 py-1 rounded-lg bg-white/95 dark:bg-[#182229] text-[12px] font-semibold text-[#54656f] dark:text-[#8696a0] shadow-sm uppercase tracking-wider">
+          <span className="px-3 py-1 rounded-lg bg-[#f0f2f5] dark:bg-[#182229] border border-[#e9edef] dark:border-[#222e35] text-[12px] font-medium text-[#54656f] dark:text-[#8696a0]">
             {t('today')}
           </span>
         </div>
@@ -511,10 +527,39 @@ export default function ChatWindow({
           </div>
         ) : (
           chat.messages.map((msg) => {
+            if (msg.isCallLog) {
+              return (
+                <div key={msg.id} className="flex justify-center my-2.5 select-none">
+                  <div className="px-4 py-2 rounded-2xl bg-white/95 dark:bg-[#182229] border border-slate-200 dark:border-[#222e35] shadow-sm flex items-center gap-3 text-[12.5px] text-[#54656f] dark:text-[#e9edef]">
+                    <div className="w-8 h-8 rounded-full bg-[#00a884]/15 text-[#00a884] flex items-center justify-center flex-shrink-0">
+                      {msg.callType === 'video' ? <Video className="w-4 h-4" /> : <Phone className="w-4 h-4" />}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <span>{msg.callType === 'video' ? 'Video call' : 'Voice call'}</span>
+                        <span className="text-[#8696a0]">•</span>
+                        <span className="font-numeric text-[#00a884]">{msg.callDurationText || '00:00'}</span>
+                      </div>
+                      <div className="text-[11px] text-[#8696a0] font-numeric">{msg.time}</div>
+                    </div>
+                    {!chat.isSelfChat && (
+                      <button
+                        type="button"
+                        onClick={() => onStartCall?.({ contact: chat, type: msg.callType || 'voice' })}
+                        className="ml-1 px-2.5 py-1 rounded-full bg-[#00a884]/15 hover:bg-[#00a884] text-[#00a884] hover:text-white text-[11px] font-semibold transition-colors cursor-pointer"
+                      >
+                        Call again
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            }
+
             const isMe = msg.isSender;
             const isDeletedForEveryone = msg.deletedForEveryone;
             const isEditing = editingMsgId === msg.id;
-            const localizedRawText = localizeMessageText(msg);
+            const localizedRawText = localizeMessageText(msg) || msg.content || '';
             const transState = translatedMap[msg.id];
             const activeDisplayText = transState?.showTranslated ? transState.translatedText : localizedRawText;
             const segments = parseMessageSegments(activeDisplayText || '');
@@ -542,17 +587,17 @@ export default function ChatWindow({
                       ? 'bg-slate-100 dark:bg-[#182229] text-[#8696a0] rounded-2xl border border-dashed border-slate-300 dark:border-white/10'
                       : isMe
                       ? 'rounded-2xl rounded-tr-none'
-                      : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-2xl rounded-tl-none border border-black/5 dark:border-white/5'
+                      : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-2xl rounded-tl-none border border-[#e9edef] dark:border-[#222e35]'
                   }`}
                   style={isMe && !isDeletedForEveryone ? {
-                    background: 'var(--outgoing-bubble-bg, #d9fdd3)',
-                    color: 'var(--outgoing-bubble-text, #111b21)'
+                    background: 'var(--outgoing-bubble-bg, #005c4b)',
+                    color: 'var(--outgoing-bubble-text, #e9edef)'
                   } : undefined}
                 >
-                  {/* Compact Sender Name Badge inside Group Bubbles */}
-                  {!isMe && chat.isGroup && msg.senderName && !isDeletedForEveryone && (
-                    <span className="block text-[11px] font-bold text-[#0055ff] dark:text-sky-400 mb-0.5 leading-tight">
-                      {msg.senderName}
+                  {/* Sender Name Badge inside Incoming / Group Bubbles */}
+                  {!isMe && (chat.isGroup || msg.senderName) && !isDeletedForEveryone && (
+                    <span className="block text-[11px] font-bold text-[#00a884] dark:text-[#00a884] mb-0.5 leading-tight">
+                      {msg.senderName || displayChat.name}
                     </span>
                   )}
 
@@ -560,25 +605,43 @@ export default function ChatWindow({
                     <div className="flex items-center gap-1.5 italic text-[13.5px] text-[#8696a0]">
                       <Ban className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>{t('deletedMessage')}</span>
-                      <span className="inline-block text-[10.5px] not-italic ml-2 text-[#8696a0] self-end">
+                      <span className="inline-block text-[10.5px] not-italic ml-2 text-[#8696a0] self-end font-numeric">
                         {msg.time}
                       </span>
                     </div>
                   ) : (
                     <>
-                      {/* Optional Full-Resolution Image */}
+                      {/* Optional Full-Resolution / HD Image with Zoomable Lightbox */}
                       {msg.image && (
                         <div className="mb-1.5">
-                          <img
-                            src={msg.image}
-                            alt="Full resolution attachment"
-                            className="rounded-xl max-h-72 w-full object-cover"
-                          />
+                          <div
+                            onClick={() => {
+                              setLightboxImage({
+                                src: msg.image,
+                                fileName: msg.fileName || 'Nexo_Image.jpg',
+                                isHd: Boolean(msg.is_hd),
+                              });
+                              setLightboxZoom(1);
+                              setLightboxPan({ x: 0, y: 0 });
+                            }}
+                            className="relative group/img cursor-zoom-in overflow-hidden rounded-xl"
+                          >
+                            <img
+                              src={msg.image}
+                              alt="Attachment"
+                              className="rounded-xl max-h-72 w-full object-cover transition-transform duration-200 group-hover/img:scale-[1.01]"
+                            />
+                            {msg.is_hd && (
+                              <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 text-[#00a884] border border-[#00a884]/60 text-[10px] font-bold tracking-wider backdrop-blur-xs">
+                                HD
+                              </span>
+                            )}
+                          </div>
                           {(msg.fileName || msg.fileSize) && (
                             <div className="mt-1 flex items-center justify-between text-[11px] opacity-80 px-0.5">
-                              <span className="truncate font-medium">{msg.fileName || 'High-Res Image'}</span>
+                              <span className="truncate font-medium">{msg.fileName || (msg.is_hd ? 'HD Image' : 'Image')}</span>
                               {msg.fileSize && (
-                                <span className="font-mono ml-2 flex-shrink-0">
+                                <span className="font-numeric ml-2 flex-shrink-0">
                                   {fileExt ? `${fileExt} • ` : ''}{msg.fileSize}
                                 </span>
                               )}
@@ -599,7 +662,7 @@ export default function ChatWindow({
                       )}
 
                       {/* Uncompressed Document / Code Attachment Card */}
-                      {!msg.image && (msg.attachment || msg.mediaType === 'document' || msg.fileName) && (
+                      {!msg.image && !(msg.mediaType === 'audio' || msg.audio_url) && (msg.attachment || msg.mediaType === 'document' || msg.fileName) && (
                         <div className="mb-2 p-2.5 rounded-xl bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/10 flex items-center justify-between gap-3 max-w-sm">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className={`px-2 py-1.5 min-w-[38px] rounded-xl ${getExtBadgeColor(fileExt)} text-white flex items-center justify-center flex-shrink-0 shadow-xs text-[10.5px] font-bold tracking-wider`}>
@@ -628,10 +691,10 @@ export default function ChatWindow({
                       )}
 
                       {/* Real Audio Player */}
-                      {(msg.mediaType === 'audio' || (msg.text && msg.text.startsWith('🎙️'))) && (
+                      {(msg.mediaType === 'audio' || Boolean(msg.audio_url) || (msg.text && msg.text.startsWith('🎙️'))) && (
                         <AudioPlayerBubble
-                          src={msg.mediaUrl || msg.attachment}
-                          duration={msg.duration}
+                          src={msg.audio_url || msg.mediaUrl || msg.attachment}
+                          duration={msg.audio_duration || msg.duration}
                         />
                       )}
 
@@ -815,7 +878,7 @@ export default function ChatWindow({
                                   />
                                 ) : (
                                   <span key={idx} className="whitespace-pre-wrap">
-                                    {seg.content}
+                                    {renderFormattedInlineText(seg.content)}
                                   </span>
                                 )
                               )}
@@ -880,7 +943,7 @@ export default function ChatWindow({
                                 )}
                               </span>
                             )}
-                            <span>{msg.time}</span>
+                            <span className="font-numeric">{msg.time}</span>
                             {isMe && !chat.isSelfChat && (
                               <span>
                                 {msg.read ? (
@@ -1051,7 +1114,7 @@ export default function ChatWindow({
 
             <div className="mt-4 max-h-72 overflow-y-auto space-y-2.5">
               <div className="p-3 rounded-xl bg-emerald-500/10 border border-emerald-500/25">
-                <span className="text-[10.5px] font-bold uppercase text-emerald-600 dark:text-emerald-400 block mb-1">
+                <span className="text-[10.5px] font-bold uppercase text-emerald-600 dark:text-emerald-400 block mb-1 font-numeric">
                   Current Version • {historyModalMsg.time}
                 </span>
                 <p className="text-[13.5px] text-[#111b21] dark:text-white whitespace-pre-wrap">
@@ -1090,6 +1153,116 @@ export default function ChatWindow({
         chat={chat}
         myPublicJwk={myPublicJwk}
       />
+
+      {/* Zoomable Image Lightbox Overlay */}
+      {lightboxImage && (
+        <div
+          className="fixed inset-0 z-50 bg-black/95 flex flex-col animate-fadeIn select-none"
+          onClick={() => setLightboxImage(null)}
+        >
+          <div
+            className="px-4 py-3 flex items-center justify-between bg-black/70 border-b border-white/10 text-white z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-[14px] font-semibold truncate">{lightboxImage.fileName}</span>
+              {lightboxImage.isHd && (
+                <span className="px-1.5 py-0.5 rounded bg-[#00a884]/25 text-[#00a884] text-[10px] font-bold border border-[#00a884]/50">
+                  HD
+                </span>
+              )}
+            </div>
+            <div className="flex items-center gap-1.5">
+              <button
+                type="button"
+                onClick={() => setLightboxZoom((z) => Math.max(1, +(z - 0.5).toFixed(2)))}
+                className="p-2 rounded-full hover:bg-white/15 cursor-pointer"
+                title="Zoom Out"
+              >
+                <ZoomOut className="w-4 h-4" />
+              </button>
+              <span className="text-[12px] font-numeric min-w-[44px] text-center">
+                {Math.round(lightboxZoom * 100)}%
+              </span>
+              <button
+                type="button"
+                onClick={() => setLightboxZoom((z) => Math.min(4, +(z + 0.5).toFixed(2)))}
+                className="p-2 rounded-full hover:bg-white/15 cursor-pointer"
+                title="Zoom In"
+              >
+                <ZoomIn className="w-4 h-4" />
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setLightboxZoom(1);
+                  setLightboxPan({ x: 0, y: 0 });
+                }}
+                className="p-2 rounded-full hover:bg-white/15 cursor-pointer"
+                title="Reset 100%"
+              >
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <a
+                href={lightboxImage.src}
+                download={lightboxImage.fileName}
+                className="p-2 rounded-full hover:bg-white/15 cursor-pointer"
+                title="Download"
+              >
+                <Download className="w-4 h-4" />
+              </a>
+              <button
+                type="button"
+                onClick={() => setLightboxImage(null)}
+                className="p-2 rounded-full hover:bg-rose-500/30 text-white cursor-pointer"
+                title="Close (Esc)"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+
+          <div
+            className="flex-1 flex items-center justify-center overflow-hidden p-4"
+            onMouseDown={(e) => {
+              if (lightboxZoom <= 1) return;
+              e.stopPropagation();
+              setIsLightboxDragging(true);
+              lightboxDragStartRef.current = { x: e.clientX - lightboxPan.x, y: e.clientY - lightboxPan.y };
+            }}
+            onMouseMove={(e) => {
+              if (!isLightboxDragging) return;
+              setLightboxPan({
+                x: e.clientX - lightboxDragStartRef.current.x,
+                y: e.clientY - lightboxDragStartRef.current.y,
+              });
+            }}
+            onMouseUp={() => setIsLightboxDragging(false)}
+            onMouseLeave={() => setIsLightboxDragging(false)}
+          >
+            <img
+              src={lightboxImage.src}
+              alt={lightboxImage.fileName}
+              onClick={(e) => e.stopPropagation()}
+              onDoubleClick={(e) => {
+                e.stopPropagation();
+                if (lightboxZoom > 1) {
+                  setLightboxZoom(1);
+                  setLightboxPan({ x: 0, y: 0 });
+                } else {
+                  setLightboxZoom(2.5);
+                }
+              }}
+              draggable={false}
+              style={{
+                transform: `translate3d(${lightboxPan.x}px, ${lightboxPan.y}px, 0) scale(${lightboxZoom})`,
+                cursor: lightboxZoom > 1 ? (isLightboxDragging ? 'grabbing' : 'grab') : 'zoom-in',
+              }}
+              className="max-h-[85vh] max-w-[92vw] object-contain rounded-lg transition-transform duration-150 select-none"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Playable Shared YouTube Video Modal */}
       {playingChatVideo && (

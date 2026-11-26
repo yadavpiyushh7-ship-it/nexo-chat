@@ -4,6 +4,9 @@ node_modules/
 # Production build
 dist/
 
+# Local downloaded skills/plugins
+.agent/
+
 # Environment variables & secrets
 .env
 .env.local
