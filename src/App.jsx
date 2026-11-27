@@ -20,6 +20,7 @@ import EdTechPrepView from './components/EdTechPrepView';
 import YouTubeHubView from './components/YouTubeHubView';
 import AppLockScreen from './components/AppLockScreen';
 import AvatarIcon from './components/AvatarIcon';
+import AvatarStudio from './components/AvatarStudio';
 import { Plus, CheckCircle2, X, Phone, PhoneOff, Video, Laptop, ShieldCheck, UserPlus, Loader2, Bell } from 'lucide-react';
 import {
   INITIAL_ARCHIVED,
@@ -45,6 +46,8 @@ import {
   triggerIncomingBrowserNotification,
 } from './lib/notifications';
 
+const normalizeHandle = (h) => String(h || '').trim().replace(/^@+/, '').toLowerCase();
+
 const isValidUUID = (str) =>
   typeof str === 'string' &&
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -67,31 +70,35 @@ function getOrCreateBrowserUserId() {
 }
 
 export default function App() {
-  // 1. Direct Auto-Load Profile with Unique Per-Browser UUID
+  // 1. Direct Auto-Load Profile with Unique Per-Browser UUID & Avatar Persistence
   const [user, setUser] = useState(() => {
     const browserId = getOrCreateBrowserUserId();
     try {
-      const saved = localStorage.getItem('nexo_user');
+      const saved = localStorage.getItem('nexo_user_profile') || localStorage.getItem('nexo_user');
       if (saved) {
         const parsed = JSON.parse(saved);
         if (parsed?.name && parsed?.username) {
-          const normalized = { ...parsed, id: browserId };
+          const avatarResolved = parsed.avatar || parsed.avatar_url || null;
+          const normalized = { ...parsed, id: browserId, avatar: avatarResolved, avatar_url: avatarResolved };
           if (parsed.id !== browserId) {
             localStorage.setItem('nexo_user', JSON.stringify(normalized));
+            localStorage.setItem('nexo_user_profile', JSON.stringify(normalized));
           }
           return normalized;
         }
       }
     } catch {}
-    const initialUser = { ...DEFAULT_STUDENT_PROFILE, id: browserId };
+    const initialUser = { ...DEFAULT_STUDENT_PROFILE, id: browserId, avatar: null, avatar_url: null };
     try {
       localStorage.setItem('nexo_user', JSON.stringify(initialUser));
+      localStorage.setItem('nexo_user_profile', JSON.stringify(initialUser));
     } catch {}
     return initialUser;
   });
 
-  // 2. Navigation Tabs: 'chats' | 'updates' | 'communities' | 'calls'
+  // 2. Navigation Tabs + Explicit Mobile Single-Pane State ('list' | 'chat')
   const [activeNavTab, setActiveNavTab] = useState('chats');
+  const [mobilePane, setMobilePane] = useState('list');
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [selectedContactForDetails, setSelectedContactForDetails] = useState(null);
 
@@ -209,6 +216,7 @@ export default function App() {
   const [joinInviteModal, setJoinInviteModal] = useState(null);
   const [joinNameDraft, setJoinNameDraft] = useState('');
   const [joinUsernameDraft, setJoinUsernameDraft] = useState('');
+  const [joinAvatarDraft, setJoinAvatarDraft] = useState(null);
   const [isAppLocked, setIsAppLocked] = useState(false);
   const [workspaceInitialTab, setWorkspaceInitialTab] = useState('gmail');
   const [hubSubTab, setHubSubTab] = useState('workspace');
@@ -222,6 +230,8 @@ export default function App() {
   const peerPubKeysRef = useRef({});
   const realtimeChannelRef = useRef(null);
   const nexoDbChannelRef = useRef(null);
+  const globalCallChannelRef = useRef(null);
+  const recentCallIdsRef = useRef(new Set());
   const incomingCallRef = useRef(incomingCall);
 
   useEffect(() => {
@@ -258,6 +268,7 @@ export default function App() {
       setActiveNavTab(hub);
     }
     setActiveChatId(null);
+    setMobilePane('list');
     setIsSettingsOpen(false);
   };
 
@@ -528,17 +539,66 @@ export default function App() {
     return () => mediaQuery.removeEventListener('change', handler);
   }, [bubbleAccent, chatWallpaper]);
 
-  // Realtime Channel Subscription & E2EE Decryption + Fallbacks (Single stable mount subscription)
+  // Shared Incoming Call Handler (Dual-channel: "nexo-global-calls" broadcast + "__NEXO_CALL__:" Postgres INSERT)
+  const handleIncomingCallSignal = useCallback((payload) => {
+    if (!payload) return;
+    const callId = payload.call_id || payload.callId;
+    const callerId = payload.caller_id || payload.caller?.id;
+    const myId = userRef.current?.id;
+    const myHandle = normalizeHandle(userRef.current?.username);
+    const calleeHandle = normalizeHandle(payload.callee_username || payload.recipientHandle);
+    const calleeId = payload.callee_id || payload.recipientId;
+
+    if (!callId || callerId === myId) return;
+    const matchesMe =
+      (calleeId && myId && calleeId === myId) ||
+      (calleeHandle && myHandle && calleeHandle === myHandle);
+    if (!matchesMe) return;
+
+    if (recentCallIdsRef.current.has(callId)) return;
+    recentCallIdsRef.current.add(callId);
+    setTimeout(() => recentCallIdsRef.current.delete(callId), 45000);
+
+    setIncomingCall({
+      ...payload,
+      call_id: callId,
+      callId,
+      type: payload.call_type || payload.type || 'voice',
+      call_type: payload.call_type || payload.type || 'voice',
+      offer: payload.offer_sdp || payload.offer,
+      offer_sdp: payload.offer_sdp || payload.offer,
+      caller: payload.caller || {
+        id: callerId,
+        name: payload.caller_name || 'Nexo Peer',
+        username: payload.caller_username || '@peer',
+        avatar: payload.caller_avatar || null,
+      },
+    });
+  }, []);
+
+  // Realtime Channel Subscription & E2EE Decryption + Call/Image Envelope Handlers
   const handleIncomingMessageRecord = useCallback(async (record, options = {}) => {
     if (!record || !record.id) return;
     const isHistoricalSync = Boolean(options.isHistorical);
     const currentUserId = userRef.current?.id;
-    const currentUsername = userRef.current?.username?.toLowerCase();
+    const currentHandleNormalized = normalizeHandle(userRef.current?.username);
     if (!currentUserId) return;
+
+    // 1. Intercept "__NEXO_CALL__:" signaling rows BEFORE treating as chat messages
+    const maybeCallContent = typeof record.content === 'string' ? record.content : '';
+    if (maybeCallContent.startsWith('__NEXO_CALL__:')) {
+      if (!isHistoricalSync) {
+        try {
+          const parsedCall = JSON.parse(maybeCallContent.slice('__NEXO_CALL__:'.length));
+          handleIncomingCallSignal(parsedCall);
+        } catch {}
+      }
+      return;
+    }
 
     const isIncomingForMe =
       record.receiver_id === currentUserId ||
-      (record.receiver_username && record.receiver_username.toLowerCase() === currentUsername);
+      (record.receiver_username && normalizeHandle(record.receiver_username) === currentHandleNormalized);
     const isMySentEcho = record.sender_id === currentUserId;
     if (!isIncomingForMe && !isMySentEcho) return;
 
@@ -546,14 +606,31 @@ export default function App() {
     if (!contactId) return;
     const isCurrentlyOpen = activeChatIdRef.current === contactId;
 
-    // Cache sender's E2EE public JWK & parse JSON envelope metadata
+    // 2. Check for "__NEXO_IMG__:" image envelope first in content/text
+    let imgPayload = null;
+    const rawContent = record.content || '';
+    const imgSource =
+      typeof rawContent === 'string' && rawContent.startsWith('__NEXO_IMG__:')
+        ? rawContent
+        : typeof record.text === 'string' && record.text.startsWith('__NEXO_IMG__:')
+        ? record.text
+        : null;
+    if (imgSource) {
+      try {
+        imgPayload = JSON.parse(imgSource.slice('__NEXO_IMG__:'.length));
+      } catch {}
+    }
+
+    // 3. Cache sender's E2EE public JWK & parse JSON envelope metadata
     let senderPubJwk = record.senderPubJwk || null;
-    let rawContent = record.content || '';
     let parsedEnvelope = null;
-    let decodedText = record.text || (typeof rawContent === 'string' && !rawContent.startsWith('{') ? rawContent : '');
+    let decodedText = imgPayload
+      ? (imgPayload.caption || '')
+      : (record.text && !String(record.text).startsWith('__NEXO_IMG__:') ? record.text : '') ||
+        (typeof rawContent === 'string' && !rawContent.startsWith('{') && !rawContent.startsWith('__NEXO_IMG__:') ? rawContent : '');
     let isE2EE = false;
 
-    if (typeof rawContent === 'string' && rawContent.startsWith('{')) {
+    if (!imgPayload && typeof rawContent === 'string' && rawContent.startsWith('{')) {
       try {
         parsedEnvelope = JSON.parse(rawContent);
         if (parsedEnvelope?.__e2ee && parsedEnvelope?.ciphertext && parsedEnvelope?.iv) {
@@ -582,7 +659,7 @@ export default function App() {
           decodedText = record.text || parsedEnvelope.text;
         }
       } catch {}
-    } else if (record.ciphertext && record.iv) {
+    } else if (!imgPayload && record.ciphertext && record.iv) {
       try {
         isE2EE = true;
         if (senderPubJwk && contactId) {
@@ -606,9 +683,11 @@ export default function App() {
       parsedEnvelope?.audio_url ||
       (record.media_type === 'audio' ? record.media_url : null);
     const resolvedAudioDuration = record.audio_duration || parsedEnvelope?.audio_duration || record.duration || null;
-    const resolvedIsHd = Boolean(record.is_hd || parsedEnvelope?.is_hd);
-    const resolvedSenderName = record.sender_name || parsedEnvelope?.sender_name || null;
-    const resolvedSenderUsername = record.sender_username || parsedEnvelope?.sender_username || null;
+    const resolvedImage = imgPayload?.image_url || (record.media_type === 'image' ? record.media_url : null);
+    const resolvedIsHd = Boolean(imgPayload?.is_hd || record.is_hd || parsedEnvelope?.is_hd);
+    const resolvedSenderName = imgPayload?.sender_name || record.sender_name || parsedEnvelope?.sender_name || null;
+    const resolvedSenderUsername = imgPayload?.sender_username || record.sender_username || parsedEnvelope?.sender_username || null;
+    const resolvedSenderAvatar = imgPayload?.sender_avatar || record.sender_avatar || parsedEnvelope?.sender_avatar || null;
     const isAlreadyInState = chatsRef.current.some(
       (c) => (c.id === contactId || c.recipientId === contactId) && c.messages.some((m) => m.id === record.id)
     );
@@ -619,18 +698,19 @@ export default function App() {
       senderId: record.sender_id || null,
       senderName: resolvedSenderName,
       senderUsername: resolvedSenderUsername,
-      text: record.deleted_for_everyone ? 'This message was deleted' : (decodedText || record.text || ''),
-      content: decodedText || record.text || '',
-      image: record.deleted_for_everyone ? null : (record.media_type === 'image' ? record.media_url : null),
+      senderAvatar: resolvedSenderAvatar,
+      text: record.deleted_for_everyone ? 'This message was deleted' : (decodedText || ''),
+      content: decodedText || '',
+      image: record.deleted_for_everyone ? null : resolvedImage,
       is_hd: resolvedIsHd,
-      mediaUrl: record.deleted_for_everyone ? null : (resolvedAudioUrl || record.media_url),
-      mediaType: resolvedAudioUrl ? 'audio' : record.media_type,
+      mediaUrl: record.deleted_for_everyone ? null : (resolvedAudioUrl || resolvedImage || record.media_url),
+      mediaType: resolvedAudioUrl ? 'audio' : resolvedImage ? 'image' : record.media_type,
       audio_url: record.deleted_for_everyone ? null : resolvedAudioUrl,
       audio_duration: resolvedAudioDuration,
       duration: resolvedAudioDuration,
       attachment: record.attachment || null,
-      fileName: record.fileName || parsedEnvelope?.fileName || null,
-      fileSize: record.fileSize || parsedEnvelope?.fileSize || null,
+      fileName: imgPayload?.file_name || record.fileName || parsedEnvelope?.fileName || null,
+      fileSize: imgPayload?.file_size || record.fileSize || parsedEnvelope?.fileSize || null,
       fileExt: record.fileExt || parsedEnvelope?.fileExt || null,
       youtubeVideo: record.youtubeVideo || parsedEnvelope?.youtubeVideo || null,
       isCallLog: Boolean(record.isCallLog || parsedEnvelope?.isCallLog),
@@ -651,7 +731,7 @@ export default function App() {
       (c) =>
         c.recipientId === contactId ||
         c.id === contactId ||
-        (resolvedSenderUsername && c.handle?.toLowerCase() === resolvedSenderUsername.toLowerCase())
+        (resolvedSenderUsername && normalizeHandle(c.handle) === normalizeHandle(resolvedSenderUsername))
     );
     const otherPartyDisplayName = isIncomingForMe
       ? (resolvedSenderName || existingChat?.name || 'Nexo Peer')
@@ -662,7 +742,7 @@ export default function App() {
         (c) =>
           c.recipientId === contactId ||
           c.id === contactId ||
-          (resolvedSenderUsername && c.handle?.toLowerCase() === resolvedSenderUsername.toLowerCase())
+          (resolvedSenderUsername && normalizeHandle(c.handle) === normalizeHandle(resolvedSenderUsername))
       );
       if (chatIndex >= 0) {
         return prevChats.map((c, idx) => {
@@ -673,15 +753,18 @@ export default function App() {
               ? resolvedSenderName
               : c.name;
           const nextHandle =
-            isIncomingForMe && resolvedSenderUsername && resolvedSenderUsername !== userRef.current?.username
+            isIncomingForMe && resolvedSenderUsername && normalizeHandle(resolvedSenderUsername) !== currentHandleNormalized
               ? resolvedSenderUsername
               : c.handle;
+          const nextAvatar =
+            isIncomingForMe && resolvedSenderAvatar ? resolvedSenderAvatar : c.avatar;
           const alreadyHas = c.messages.some((m) => m.id === formattedMsg.id);
           if (alreadyHas) {
             return {
               ...c,
               name: nextName,
               handle: nextHandle,
+              avatar: nextAvatar,
               e2eePubJwk: nextPubJwk,
               messages: c.messages.map((m) => (m.id === formattedMsg.id ? { ...m, ...formattedMsg } : m)),
             };
@@ -690,6 +773,7 @@ export default function App() {
             ...c,
             name: nextName,
             handle: nextHandle,
+            avatar: nextAvatar,
             e2eePubJwk: nextPubJwk,
             unreadCount: (isIncomingForMe && !isCurrentlyOpen && !isHistoricalSync) ? (c.unreadCount || 0) + 1 : c.unreadCount,
             messages: [...c.messages, formattedMsg],
@@ -701,6 +785,7 @@ export default function App() {
         recipientId: contactId,
         name: otherPartyDisplayName,
         handle: resolvedSenderUsername || record.receiver_username || `@peer_${String(contactId).slice(0, 5)}`,
+        avatar: resolvedSenderAvatar || null,
         bio: 'Nexo E2EE Peer',
         e2eePubJwk: senderPubJwk || null,
         folder: 'all',
@@ -739,7 +824,7 @@ export default function App() {
         }, 5000);
       }
     }
-  }, []);
+  }, [handleIncomingCallSignal]);
 
   // Load historical messages from Supabase & attach stable Realtime channels ONCE (no auto-refresh cascade)
   useEffect(() => {
@@ -763,32 +848,42 @@ export default function App() {
 
     const channel = supabase.channel('realtime-messages');
     const nexoDbChannel = supabase.channel('nexo-db');
-    const callSignalingChannel = supabase.channel('nexo-call-signaling');
+    const globalCallsChannel = supabase.channel('nexo-global-calls');
 
     channel
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
-        handleIncomingMessageRecord(payload.new);
+        const newRow = payload.new;
+        if (typeof newRow?.content === 'string' && newRow.content.startsWith('__NEXO_CALL__:')) {
+          try {
+            handleIncomingCallSignal(JSON.parse(newRow.content.slice('__NEXO_CALL__:'.length)));
+          } catch {}
+          return;
+        }
+        handleIncomingMessageRecord(newRow);
       })
       .on('broadcast', { event: 'new-message' }, ({ payload }) => {
         handleIncomingMessageRecord(payload);
       })
       .on('broadcast', { event: 'call-offer' }, ({ payload }) => {
-        if (payload?.recipientId === userRef.current?.id && payload?.caller?.id !== userRef.current?.id) {
-          setIncomingCall(payload);
-        }
+        handleIncomingCallSignal(payload);
       })
       .subscribe();
 
-    callSignalingChannel
+    globalCallsChannel
       .on('broadcast', { event: 'incoming_call' }, ({ payload }) => {
-        const myId = userRef.current?.id;
-        const myHandle = userRef.current?.username?.toLowerCase();
-        const matchesMe =
-          payload?.recipientId === myId ||
-          (payload?.recipientHandle && payload.recipientHandle.toLowerCase() === myHandle);
-        if (matchesMe && payload?.caller?.id !== myId) {
-          setIncomingCall(payload);
+        handleIncomingCallSignal(payload);
+      })
+      .on('broadcast', { event: 'call-answer' }, ({ payload }) => {
+        window.dispatchEvent(new CustomEvent('nexo-call-signal', { detail: { kind: 'call-answer', payload } }));
+      })
+      .on('broadcast', { event: 'ice-candidate' }, ({ payload }) => {
+        window.dispatchEvent(new CustomEvent('nexo-call-signal', { detail: { kind: 'ice-candidate', payload } }));
+      })
+      .on('broadcast', { event: 'call-ended' }, ({ payload }) => {
+        if (incomingCallRef.current && (incomingCallRef.current.call_id === payload?.call_id || incomingCallRef.current.callId === payload?.callId)) {
+          setIncomingCall(null);
         }
+        window.dispatchEvent(new CustomEvent('nexo-call-signal', { detail: { kind: 'call-ended', payload } }));
       })
       .subscribe();
 
@@ -799,7 +894,7 @@ export default function App() {
       .on('broadcast', { event: 'peer-connect' }, ({ payload }) => {
         if (!payload || payload.peerId === userRef.current?.id) return;
         const targetsMe =
-          payload.inviterHandle?.toLowerCase() === userRef.current?.username?.toLowerCase() ||
+          normalizeHandle(payload.inviterHandle) === normalizeHandle(userRef.current?.username) ||
           payload.targetUserId === userRef.current?.id;
         if (targetsMe) {
           if (payload.publicJwk) {
@@ -809,12 +904,12 @@ export default function App() {
             const exists = prev.some(
               (c) =>
                 c.recipientId === payload.peerId ||
-                c.handle?.toLowerCase() === payload.peerHandle?.toLowerCase()
+                normalizeHandle(c.handle) === normalizeHandle(payload.peerHandle)
             );
             if (exists) {
               return prev.map((c) =>
-                c.recipientId === payload.peerId || c.handle?.toLowerCase() === payload.peerHandle?.toLowerCase()
-                  ? { ...c, name: payload.peerName || c.name, handle: payload.peerHandle || c.handle }
+                c.recipientId === payload.peerId || normalizeHandle(c.handle) === normalizeHandle(payload.peerHandle)
+                  ? { ...c, name: payload.peerName || c.name, handle: payload.peerHandle || c.handle, avatar: payload.peerAvatar || c.avatar }
                   : c
               );
             }
@@ -865,14 +960,16 @@ export default function App() {
 
     realtimeChannelRef.current = channel;
     nexoDbChannelRef.current = nexoDbChannel;
+    globalCallChannelRef.current = globalCallsChannel;
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(nexoDbChannel);
-      supabase.removeChannel(callSignalingChannel);
+      supabase.removeChannel(globalCallsChannel);
       realtimeChannelRef.current = null;
       nexoDbChannelRef.current = null;
+      globalCallChannelRef.current = null;
     };
-  }, []);
+  }, [handleIncomingCallSignal, handleIncomingMessageRecord]);
 
   // Ringtone while Incoming Call Modal is active
   useEffect(() => {
@@ -943,12 +1040,15 @@ export default function App() {
   const handleAcceptIncomingCall = () => {
     if (!incomingCall) return;
     setActiveCall({
-      id: incomingCall.callId,
+      id: incomingCall.call_id || incomingCall.callId,
+      call_id: incomingCall.call_id || incomingCall.callId,
       caller: incomingCall.caller,
       recipient: user,
-      type: incomingCall.type,
+      type: incomingCall.call_type || incomingCall.type || 'voice',
+      call_type: incomingCall.call_type || incomingCall.type || 'voice',
       isIncoming: true,
-      offer: incomingCall.offer,
+      offer: incomingCall.offer_sdp || incomingCall.offer,
+      offer_sdp: incomingCall.offer_sdp || incomingCall.offer,
     });
     setIncomingCall(null);
   };
@@ -1007,6 +1107,7 @@ export default function App() {
 
     if (existing) {
       setActiveChatId(existing.id);
+      setMobilePane('chat');
       setActiveNavTab('chats');
       setIsSettingsOpen(false);
       return;
@@ -1044,6 +1145,7 @@ export default function App() {
 
     setChats((prevChats) => [prevChats[0] || createSelfChat(user), newChatObj, ...prevChats.slice(1)]);
     setActiveChatId(newChatObj.id);
+    setMobilePane('chat');
     setActiveNavTab('chats');
     setIsSettingsOpen(false);
   };
@@ -1316,19 +1418,26 @@ export default function App() {
   };
 
   const handleUpdateUser = (updatedUser) => {
-    setUser(updatedUser);
+    const normalizedUser = {
+      ...updatedUser,
+      avatar: updatedUser.avatar || updatedUser.avatar_url || null,
+      avatar_url: updatedUser.avatar || updatedUser.avatar_url || null,
+    };
+    setUser(normalizedUser);
     try {
-      localStorage.setItem('nexo_user', JSON.stringify(updatedUser));
+      localStorage.setItem('nexo_user', JSON.stringify(normalizedUser));
+      localStorage.setItem('nexo_user_profile', JSON.stringify(normalizedUser));
     } catch {}
 
-    const dynamicSelfName = `${updatedUser.name || 'Piyush Yadav'} (You)`;
+    const dynamicSelfName = `${normalizedUser.name || 'Piyush Yadav'} (You)`;
     setChats((prevChats) =>
       prevChats.map((c) =>
         c.isSelfChat
           ? {
               ...c,
               name: dynamicSelfName,
-              handle: `${updatedUser.username} • Message yourself`,
+              avatar: normalizedUser.avatar || null,
+              handle: `${normalizedUser.username} • Message yourself`,
             }
           : c
       )
@@ -1339,21 +1448,23 @@ export default function App() {
   };
 
   const handleResetWorkspace = () => {
-    const freshUser = { ...DEFAULT_STUDENT_PROFILE, id: getOrCreateBrowserUserId() };
+    const freshUser = { ...DEFAULT_STUDENT_PROFILE, id: getOrCreateBrowserUserId(), avatar: null, avatar_url: null };
     setUser(freshUser);
     try {
       localStorage.setItem('nexo_user', JSON.stringify(freshUser));
+      localStorage.setItem('nexo_user_profile', JSON.stringify(freshUser));
       localStorage.removeItem('nexo_invite_profile_done');
     } catch {}
     const freshChats = createCampusWorkspaceChats(freshUser);
     setChats(freshChats);
     setBookmarkedVault(INITIAL_BOOKMARKS);
     setIsSettingsOpen(false);
+    setMobilePane('list');
     setActiveChatId(typeof window !== 'undefined' && window.innerWidth >= 768 ? 'chat_placement_cell' : null);
     showToast('Campus Placement workspace reset to defaults.');
   };
 
-  // Send Message to Any Chat (with client-side Web Crypto AES-GCM-256 E2EE + nexo-db broadcast)
+  // Send Message to Any Chat (with "__NEXO_IMG__:" image envelope + Web Crypto AES-GCM-256 E2EE + Supabase sync)
   const sendMessageToChat = async (targetChatId, payload) => {
     if (!targetChatId) return;
 
@@ -1414,16 +1525,44 @@ export default function App() {
       prev.map((c) => (c.id === targetChatId ? { ...c, messages: [...c.messages, newMsg] } : c))
     );
 
-    // Client-side AES-GCM-256 E2EE encryption + Supabase Realtime nexo-db broadcast
+    // Client-side E2EE + Structured Image Envelope ("__NEXO_IMG__:") + Supabase Realtime/DB delivery
     if (shouldEncrypt && targetChat) {
       try {
-        const recipientId = targetChat.recipientId || targetChat.id;
+        let recipientId = targetChat.recipientId || targetChat.id;
+        if (!isValidUUID(recipientId) && targetChat.handle) {
+          try {
+            const cleanTarget = normalizeHandle(targetChat.handle);
+            const { data } = await supabase
+              .from('profiles')
+              .select('id')
+              .ilike('username', `@${cleanTarget}`)
+              .limit(1);
+            if (data?.[0]?.id && isValidUUID(data[0].id)) {
+              recipientId = data[0].id;
+            }
+          } catch {}
+        }
+
         const peerPubJwk = targetChat.e2eePubJwk || peerPubKeysRef.current[recipientId] || null;
         const seed = [userRef.current?.id || 'local', recipientId].sort().join(':');
         const aesKey = await deriveSharedAESKey(myKeysRef.current?.privateJwk, peerPubJwk, seed);
         const encrypted = await encryptMessageText(text || '', aesKey);
 
-        const e2eeEnvelope = JSON.stringify({
+        const imgEnvelope = image
+          ? `__NEXO_IMG__:${JSON.stringify({
+              image_url: image,
+              is_hd,
+              file_name: fileName || null,
+              file_size: fileSize || null,
+              caption: text || '',
+              sender_id: userRef.current?.id || null,
+              sender_name: userRef.current?.name || null,
+              sender_username: userRef.current?.username || null,
+              sender_avatar: userRef.current?.avatar || userRef.current?.avatar_url || null,
+            })}`
+          : null;
+
+        const e2eeEnvelope = imgEnvelope || JSON.stringify({
           __e2ee: true,
           alg: 'AES-GCM-256',
           iv: encrypted.iv,
@@ -1431,6 +1570,7 @@ export default function App() {
           text: text || '',
           sender_name: userRef.current?.name,
           sender_username: userRef.current?.username,
+          sender_avatar: userRef.current?.avatar || userRef.current?.avatar_url || null,
           audio_url: audio_url || null,
           audio_duration: audio_duration || null,
           is_hd,
@@ -1446,10 +1586,11 @@ export default function App() {
           sender_id: userRef.current?.id,
           sender_name: userRef.current?.name,
           sender_username: userRef.current?.username,
+          sender_avatar: userRef.current?.avatar || userRef.current?.avatar_url || null,
           receiver_id: recipientId,
           receiver_name: targetChat.name || null,
           receiver_username: targetChat.handle || null,
-          text,
+          text: imgEnvelope || text,
           content: e2eeEnvelope,
           media_url: audio_url || image || attachment || null,
           media_type: mediaType || null,
@@ -1476,7 +1617,7 @@ export default function App() {
             sender_id: userRef.current.id,
             receiver_id: recipientId,
             content: e2eeEnvelope,
-            media_url: audio_url || image || null,
+            media_url: audio_url || null,
             media_type: mediaType || null,
             status: 'sent',
           });
@@ -1516,6 +1657,7 @@ export default function App() {
 
   const handleSelectChat = (id) => {
     setActiveChatId(id);
+    setMobilePane('chat');
     requestNotificationPermission();
     setIncomingToastBanner((curr) => (curr?.chatId === id ? null : curr));
     setChats((prev) =>
@@ -1551,7 +1693,7 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-[100dvh] w-screen overflow-x-hidden overflow-y-hidden bg-[#f0f2f5] dark:bg-[#0c1317] text-[#111b21] dark:text-[#e9edef] font-sans pb-[env(safe-area-inset-bottom)]">
+    <div className="flex h-[100dvh] w-screen overflow-x-hidden overflow-y-hidden bg-white dark:bg-[#0b141a] text-[#111b21] dark:text-[#e9edef] font-sans pb-[env(safe-area-inset-bottom)]">
       {/* 1. Desktop Navigation Rail (>= 768px) */}
       <div className="hidden md:flex h-full flex-shrink-0">
         <NavigationRail
@@ -1583,7 +1725,7 @@ export default function App() {
               onChangeTheme={handleChangeTheme}
             />
           </div>
-          <div className="hidden md:flex flex-1 h-full items-center justify-center bg-[#efeae2]/40 dark:bg-[#0b141a] p-8 text-center text-[#8696a0]">
+          <div className="hidden md:flex flex-1 h-full items-center justify-center bg-white dark:bg-[#0b141a] p-8 text-center text-[#8696a0]">
             <p className="text-[14.5px]">
               Customize chat themes, wallpapers, connected devices, and your B.Tech CSE profile.
             </p>
@@ -1591,6 +1733,7 @@ export default function App() {
         </div>
       ) : activeNavTab === 'hub' ? (
         <MobileHubView
+          user={user}
           chats={chats}
           onSendMessageToChat={sendMessageToChat}
           onSaveToVault={handleSaveSummaryToVault}
@@ -1617,6 +1760,7 @@ export default function App() {
         />
       ) : activeNavTab === 'workspace' ? (
         <WorkspaceHubView
+          user={user}
           chats={chats}
           onSendMessageToChat={sendMessageToChat}
           onSaveToVault={handleSaveSummaryToVault}
@@ -1639,9 +1783,9 @@ export default function App() {
         />
       ) : (
         <div className="flex-1 h-full flex overflow-hidden relative">
-          {/* Chat List Pane */}
+          {/* Chat List Pane (Strict Single-Pane on Mobile < 768px) */}
           <div className={`w-full md:w-[360px] lg:w-[390px] h-full flex-shrink-0 ${
-            activeChatId ? 'hidden md:flex' : 'flex'
+            mobilePane === 'chat' ? 'hidden md:flex' : 'flex'
           }`}>
             <Sidebar
               user={user}
@@ -1690,7 +1834,7 @@ export default function App() {
           </div>
 
           {/* Mobile Floating Action Button */}
-          {!activeChatId && (
+          {mobilePane !== 'chat' && (
             <button
               onClick={() => setIsNewChatOpen(true)}
               title="Message peer by @username"
@@ -1700,8 +1844,8 @@ export default function App() {
             </button>
           )}
 
-          {/* Active Chat Window */}
-          <div className={`flex-1 h-full ${!activeChatId ? 'hidden md:flex' : 'flex'}`}>
+          {/* Active Chat Window (Full 100dvh Single-Pane on Mobile) */}
+          <div className={`flex-1 h-[100dvh] overflow-x-hidden min-w-0 ${mobilePane !== 'chat' ? 'hidden md:flex' : 'flex w-full'}`}>
             <ChatWindow
               chat={activeChat}
               onSendMessage={handleSendMessage}
@@ -1714,7 +1858,10 @@ export default function App() {
               onShowContactDetails={(contact) => setSelectedContactForDetails(contact)}
               onNewChat={() => setIsNewChatOpen(true)}
               onScheduleMessage={handleScheduleMessage}
-              onBackToList={() => setActiveChatId(null)}
+              onBackToList={() => {
+                setMobilePane('list');
+                setActiveChatId(null);
+              }}
               onPromptDeleteMessage={(msg, cId) => setDeletePrompt({ msg, chatId: cId })}
               onToggleStarMessage={handleToggleStarMessage}
               chatWallpaper={chatWallpaper}
@@ -1739,11 +1886,12 @@ export default function App() {
       )}
 
       {/* 3. Mobile Bottom Navigation Bar */}
-      {!activeChatId && !isSettingsOpen && (
+      {mobilePane !== 'chat' && !isSettingsOpen && (
         <MobileNavBar
           activeTab={activeNavTab}
           setActiveTab={(tab) => {
             setActiveNavTab(tab);
+            setMobilePane('list');
             setIsSettingsOpen(false);
           }}
           unreadTotal={totalUnreadCount}
@@ -1793,33 +1941,47 @@ export default function App() {
       />
 
       {incomingCall && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
-          <div className="w-full max-w-sm bg-white dark:bg-[#111b21] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-white/10 flex flex-col items-center text-center">
-            <div className="relative mb-4">
-              <AvatarIcon size="xl" name={incomingCall.caller?.name || 'Peer'} />
-              <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#00a884] rounded-full ring-2 ring-white dark:ring-[#111b21] animate-ping" />
+        <div className="fixed inset-0 z-50 flex flex-col items-center justify-center p-6 bg-[#0b141a]/95 backdrop-blur-md animate-fadeIn">
+          <div className="w-full max-w-sm bg-[#111b21] rounded-3xl p-8 shadow-2xl border border-[#222e35] flex flex-col items-center text-center">
+            <div className="relative mb-5">
+              <AvatarIcon
+                size="2xl"
+                name={incomingCall.caller?.name || incomingCall.caller_name || 'Peer'}
+                avatar={incomingCall.caller?.avatar || incomingCall.caller_avatar || null}
+              />
+              <span className="absolute -bottom-1 -right-1 w-5 h-5 bg-[#00a884] rounded-full ring-2 ring-[#111b21] animate-ping" />
             </div>
-            <h3 className="text-[19px] font-bold text-[#111b21] dark:text-white">
-              {incomingCall.caller?.name || 'Nexo Peer'}
+            <h3 className="text-[22px] font-bold text-[#e9edef]">
+              {incomingCall.caller?.name || incomingCall.caller_name || 'Nexo Peer'}
             </h3>
-            <p className="text-[13px] text-[#0055ff] font-semibold mt-0.5">
-              {incomingCall.caller?.username || '@peer'}
+            <p className="text-[13.5px] text-[#00a884] font-semibold mt-0.5">
+              {incomingCall.caller?.username || incomingCall.caller_username || '@peer'}
             </p>
-            <p className="text-[13.5px] text-[#667781] dark:text-[#8696a0] mt-2 font-medium">
-              Incoming {incomingCall.type === 'video' ? 'Video' : 'Voice'} Call...
+            <p className="text-[14px] text-[#8696a0] mt-2 font-medium">
+              {(incomingCall.call_type || incomingCall.type) === 'video' ? 'Incoming Video Call' : 'Incoming Voice Call'}
             </p>
-            <div className="flex items-center gap-6 mt-6">
+            <div className="flex items-center gap-7 mt-8">
               <button
-                onClick={() => setIncomingCall(null)}
-                className="w-14 h-14 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg cursor-pointer active:scale-95 transition-transform"
+                onClick={() => {
+                  const cid = incomingCall.call_id || incomingCall.callId;
+                  globalCallChannelRef.current?.send({
+                    type: 'broadcast',
+                    event: 'call-ended',
+                    payload: { callId: cid, call_id: cid, senderId: user?.id },
+                  });
+                  setIncomingCall(null);
+                }}
+                className="w-15 h-15 rounded-full bg-rose-600 hover:bg-rose-700 text-white flex items-center justify-center shadow-lg cursor-pointer active:scale-95 transition-transform"
+                title="Decline"
               >
                 <PhoneOff className="w-6 h-6" />
               </button>
               <button
                 onClick={handleAcceptIncomingCall}
-                className="w-14 h-14 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-lg cursor-pointer active:scale-95 transition-transform"
+                className="w-15 h-15 rounded-full bg-[#00a884] hover:bg-[#008f6f] text-white flex items-center justify-center shadow-lg cursor-pointer active:scale-95 transition-transform"
+                title="Accept"
               >
-                {incomingCall.type === 'video' ? <Video className="w-6 h-6" /> : <Phone className="w-6 h-6" />}
+                {(incomingCall.call_type || incomingCall.type) === 'video' ? <Video className="w-6 h-6" /> : <Phone className="w-6 h-6" />}
               </button>
             </div>
           </div>
@@ -1832,6 +1994,13 @@ export default function App() {
           currentUser={user}
           onEndCall={handleEndCallWithSummary}
           onSaveCallRecording={handleSaveCallRecording}
+          onSendCallSignal={(eventName, payload) => {
+            globalCallChannelRef.current?.send({
+              type: 'broadcast',
+              event: eventName,
+              payload,
+            });
+          }}
         />
       )}
 
@@ -1851,9 +2020,12 @@ export default function App() {
                 id: uniqueId,
                 name: cleanName,
                 username: cleanHandle,
+                avatar: joinAvatarDraft || null,
+                avatar_url: joinAvatarDraft || null,
               };
               try {
                 localStorage.setItem('nexo_user', JSON.stringify(nextUser));
+                localStorage.setItem('nexo_user_profile', JSON.stringify(nextUser));
                 localStorage.setItem('nexo_invite_profile_done', '1');
               } catch {}
               handleUpdateUser(nextUser);
@@ -1863,7 +2035,7 @@ export default function App() {
                   id: uniqueId,
                   username: cleanHandle,
                   full_name: cleanName,
-                  avatar_url: nextUser.avatar || '',
+                  avatar_url: joinAvatarDraft || '',
                   mood: nextUser.bio || 'Nexo E2EE Peer',
                   focus_reply: JSON.stringify({ e2eePubJwk: myKeysRef.current?.publicJwk || null }),
                   updated_at: new Date().toISOString(),
@@ -1878,6 +2050,7 @@ export default function App() {
                   peerId: uniqueId,
                   peerName: cleanName,
                   peerHandle: cleanHandle,
+                  peerAvatar: joinAvatarDraft || null,
                   publicJwk: myKeysRef.current?.publicJwk || null,
                   inviterHandle: inviter.handle,
                   targetUserId: inviter.recipientId,
@@ -1888,21 +2061,27 @@ export default function App() {
               handleStartChatWith(inviter);
               showToast(`Joined as ${cleanName} (${cleanHandle})`);
             }}
-            className="w-full max-w-sm bg-white dark:bg-[#111b21] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-[#222e35] space-y-4"
+            className="w-full max-w-md bg-white dark:bg-[#111b21] rounded-3xl p-6 shadow-2xl border border-slate-200 dark:border-[#222e35] space-y-4 max-h-[92vh] overflow-y-auto"
           >
-            <div className="flex items-center gap-3">
-              <div className="w-11 h-11 rounded-2xl bg-[#00a884]/15 text-[#00a884] flex items-center justify-center flex-shrink-0">
-                <UserPlus className="w-5 h-5" />
-              </div>
-              <div>
-                <h3 className="text-[17px] font-bold text-[#111b21] dark:text-[#e9edef]">
-                  Join Nexo Chat
-                </h3>
-                <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0]">
-                  Connect with {joinInviteModal.inviterContact?.name} ({joinInviteModal.inviterContact?.handle})
-                </p>
+            <div className="flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <AvatarIcon size="md" name={joinNameDraft || 'Peer'} avatar={joinAvatarDraft} />
+                <div className="min-w-0">
+                  <h3 className="text-[17px] font-bold text-[#111b21] dark:text-[#e9edef] truncate">
+                    Join Nexo Chat
+                  </h3>
+                  <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0] truncate">
+                    Connect with {joinInviteModal.inviterContact?.name} ({joinInviteModal.inviterContact?.handle})
+                  </p>
+                </div>
               </div>
             </div>
+
+            <AvatarStudio
+              compact
+              selectedAvatar={joinAvatarDraft}
+              onSelectAvatar={(dataUrl) => setJoinAvatarDraft(dataUrl)}
+            />
 
             <div className="space-y-3">
               <div>

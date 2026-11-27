@@ -1,15 +1,15 @@
 import React from 'react';
 import { LayoutGrid } from 'lucide-react';
-import { ChatsIcon, CommunitiesIcon, CallsIcon } from './WhatsAppIcons';
+import { ChatsTabIcon, CommunitiesIcon, CallsTabIcon } from './WhatsAppIcons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function MobileNavBar({ activeTab, setActiveTab, unreadTotal = 0 }) {
   const { t } = useLanguage();
 
   const tabs = [
-    { id: 'chats', label: t('chats'), icon: ChatsIcon, badge: unreadTotal },
+    { id: 'chats', label: t('chats'), icon: ChatsTabIcon, badge: unreadTotal },
     { id: 'communities', label: t('communities'), icon: CommunitiesIcon },
-    { id: 'calls', label: t('calls'), icon: CallsIcon },
+    { id: 'calls', label: t('calls'), icon: CallsTabIcon },
     { id: 'hub', label: 'Hub', icon: LayoutGrid },
   ];
 
@@ -25,13 +25,15 @@ export default function MobileNavBar({ activeTab, setActiveTab, unreadTotal = 0 
             onClick={() => setActiveTab(tab.id)}
             className="flex-1 flex flex-col items-center justify-center py-1 cursor-pointer min-w-0"
           >
-            <div className={`relative px-4 py-1 rounded-full transition-all ${
-              isActive ? 'bg-[#d9fdd3] dark:bg-[#005c4b] text-[#00a884] dark:text-[#25d366]' : 'text-[#54656f] dark:text-[#8696a0]'
+            <div className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150 ${
+              isActive
+                ? 'bg-[#d9fdd3] text-[#008069] dark:bg-[#2a2f32] dark:text-white'
+                : 'text-[#54656f] dark:text-[#8696a0]'
             }`}>
-              <Icon className="w-[21px] h-[21px]" active={isActive} />
+              <Icon className={tab.id === 'calls' ? 'w-[21px] h-[21px]' : 'w-[22px] h-[22px]'} active={isActive} />
 
               {tab.badge && tab.badge > 0 ? (
-                <span className="font-numeric absolute -top-0.5 right-0.5 px-1.5 min-w-[16px] h-[16px] text-[10px] font-bold rounded-full bg-[#00a884] text-white flex items-center justify-center shadow">
+                <span className="font-numeric absolute -top-0.5 -right-0.5 px-1 min-w-[16px] h-[16px] text-[10px] font-bold rounded-full bg-[#00a884] text-white flex items-center justify-center shadow">
                   {tab.badge}
                 </span>
               ) : null}

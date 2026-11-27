@@ -40,6 +40,7 @@ import {
 } from 'lucide-react';
 import { QRCodeSVG } from 'qrcode.react';
 import AvatarIcon from './AvatarIcon';
+import AvatarStudio from './AvatarStudio';
 import { supabase } from '../lib/supabase';
 import { BUBBLE_ACCENTS, CHAT_WALLPAPERS } from '../lib/themeUtils';
 import { GLOBAL_LANGUAGES, INDIAN_LANGUAGES, useLanguage } from '../contexts/LanguageContext';
@@ -194,18 +195,34 @@ export default function SettingsDrawer({
     setTimeout(() => setCacheCleared(false), 3500);
   };
 
-  // Profile Edit Handlers
+  // Profile Edit Handlers (Resize uploaded photo cleanly to 256x256 JPEG Data URL)
+  const avatarFileInputRef = useRef(null);
+
   const handleProfilePhotoChange = (e) => {
     const file = e.target.files?.[0];
-    if (file) {
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (reader.result) {
-          setEditAvatar(reader.result);
-        }
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      if (!reader.result) return;
+      const img = new Image();
+      img.onload = () => {
+        const targetSize = 256;
+        const canvas = document.createElement('canvas');
+        canvas.width = targetSize;
+        canvas.height = targetSize;
+        const ctx = canvas.getContext('2d');
+        const minSide = Math.min(img.width, img.height);
+        const sx = Math.round((img.width - minSide) / 2);
+        const sy = Math.round((img.height - minSide) / 2);
+        ctx.drawImage(img, sx, sy, minSide, minSide, 0, 0, targetSize, targetSize);
+        const resizedDataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        setEditAvatar(resizedDataUrl);
       };
-      reader.readAsDataURL(file);
-    }
+      img.onerror = () => setEditAvatar(reader.result);
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
   const handleSaveProfile = (e) => {
@@ -215,13 +232,15 @@ export default function SettingsDrawer({
       ...user,
       name: editName.trim() || 'Piyush Yadav',
       username: cleanHandle,
-      avatar: editAvatar,
+      avatar: editAvatar || null,
+      avatar_url: editAvatar || null,
       mood: editMood.trim() || 'Prepping DSA & System Design 💻'
     };
 
     setMood(updatedUser.mood);
     try {
       localStorage.setItem('nexo_user', JSON.stringify(updatedUser));
+      localStorage.setItem('nexo_user_profile', JSON.stringify(updatedUser));
       localStorage.setItem('nexo_user_mood', updatedUser.mood);
     } catch {}
 
@@ -231,7 +250,7 @@ export default function SettingsDrawer({
         id: user.id,
         username: cleanHandle,
         full_name: editName.trim() || 'Piyush Yadav',
-        avatar_url: editAvatar,
+        avatar_url: editAvatar || null,
         mood: editMood.trim() || 'Prepping DSA & System Design 💻',
         updated_at: new Date().toISOString()
       }).then(({ error }) => {
@@ -444,6 +463,7 @@ export default function SettingsDrawer({
               <AvatarIcon
                 size="xl"
                 name={user?.name || editName}
+                avatar={user?.avatar || user?.avatar_url}
                 showOnline
                 online
               />
@@ -556,6 +576,7 @@ export default function SettingsDrawer({
                 <AvatarIcon
                   size="lg"
                   name={user?.name || 'Alex Morgan'}
+                  avatar={user?.avatar || user?.avatar_url}
                 />
               </div>
               <h4 className="text-[17px] font-bold text-[#111b21]">{user?.name || 'Piyush Yadav'}</h4>
@@ -1649,16 +1670,22 @@ export default function SettingsDrawer({
 
             {/* Modal Body */}
             <form onSubmit={handleSaveProfile} className="p-5 sm:p-6 overflow-y-auto space-y-5">
-              {/* Silhouette Avatar Profile */}
+              {/* Top Avatar Preview + Avatar Studio (Choose Avatar / Upload Photo) */}
               <div className="flex flex-col items-center justify-center">
                 <AvatarIcon
                   size="xl"
                   name={editName || user?.name || 'Piyush Yadav'}
+                  avatar={editAvatar}
                 />
-                <p className="mt-2 text-[12px] font-medium text-[#8696a0]">
-                  Monochrome Silhouette Profile
+                <p className="mt-2 text-[11.5px] font-medium text-[#667781] dark:text-[#8696a0]">
+                  Preview Profile Avatar
                 </p>
               </div>
+
+              <AvatarStudio
+                selectedAvatar={editAvatar}
+                onSelectAvatar={(dataUrl) => setEditAvatar(dataUrl)}
+              />
 
               {/* Display Name Input */}
               <div>

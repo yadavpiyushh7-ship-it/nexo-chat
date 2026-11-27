@@ -423,6 +423,7 @@ export default function Sidebar({
                     size="md"
                     isGroup={chat.isGroup}
                     name={locChat.name}
+                    avatar={chat.isSelfChat ? (user?.avatar || user?.avatar_url || chat.avatar) : chat.avatar}
                     showOnline={chat.online && !isMutedByFocus}
                     online={chat.online}
                   />

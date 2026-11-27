@@ -22,6 +22,9 @@ import {
 } from 'lucide-react';
 import { requestAI } from '../lib/aiClient';
 import { useGoogleAuth, exportPresentationToGoogleSlides } from '../lib/googleApis';
+import { supabase } from '../lib/supabase';
+
+const ACTIVE_MEET_STORAGE_KEY = 'nexo_active_meet_v1';
 
 const SAMPLE_PLACEMENT_EMAILS = [
   {
@@ -50,33 +53,6 @@ const SAMPLE_PLACEMENT_EMAILS = [
     tag: 'Career Prep',
     unread: false,
     body: 'Make sure every pinned repository includes a clear architecture diagram, live demo URL, benchmark metrics, and reproducible setup steps before recruiter screening.',
-  },
-];
-
-const INITIAL_MEET_SCHEDULES = [
-  {
-    id: 'mt_1',
-    title: 'Pre-Placement Talk & OA Strategy (2027 Batch)',
-    host: 'Placement Cell • JECRC University',
-    time: 'Today, 5:00 PM – 6:00 PM',
-    meetUrl: 'https://meet.google.com/new',
-    type: 'Pre-Placement Talk',
-  },
-  {
-    id: 'mt_2',
-    title: 'System Design & DSA Mock Interview Session',
-    host: 'DSA & Coding Prep Squad',
-    time: 'Tomorrow, 7:30 PM – 8:30 PM',
-    meetUrl: 'https://meet.google.com/new',
-    type: 'Mock Interview',
-  },
-  {
-    id: 'mt_3',
-    title: 'AI & ML Capstone Architecture Sync',
-    host: 'B.Tech CSE Study Group',
-    time: 'Saturday, 11:30 AM – 12:30 PM',
-    meetUrl: 'https://meet.google.com/new',
-    type: 'Group Study',
   },
 ];
 
@@ -167,6 +143,7 @@ function ensureGisScriptLoaded() {
 }
 
 export default function WorkspaceHubView({
+  user = null,
   chats = [],
   onSendMessageToChat,
   onSaveToVault,
@@ -217,12 +194,73 @@ export default function WorkspaceHubView({
   const [sendingCompose, setSendingCompose] = useState(false);
   const [composeError, setComposeError] = useState('');
 
-  // Meet + Scheduler + MoM State
+  // Meet + Scheduler + MoM State (Single Persistent Active Meeting — Zero Fake Defaults)
   const [targetChatId, setTargetChatId] = useState(chats[1]?.id || chats[0]?.id || 'self_vault');
-  const [meetings, setMeetings] = useState(INITIAL_MEET_SCHEDULES);
+  const [activeMeeting, setActiveMeeting] = useState(() => {
+    try {
+      const saved = localStorage.getItem(ACTIVE_MEET_STORAGE_KEY);
+      return saved ? JSON.parse(saved) : null;
+    } catch {
+      return null;
+    }
+  });
   const [newMeetTitle, setNewMeetTitle] = useState('');
   const [newMeetDateTime, setNewMeetDateTime] = useState('');
   const [newMeetType, setNewMeetType] = useState('Mock Interview');
+
+  useEffect(() => {
+    if (!user?.id) return;
+    supabase
+      .from('profiles')
+      .select('focus_reply')
+      .eq('id', user.id)
+      .limit(1)
+      .then(({ data }) => {
+        const raw = data?.[0]?.focus_reply;
+        if (!raw || !raw.startsWith('{')) return;
+        const parsed = JSON.parse(raw);
+        if (parsed?.activeMeeting && !localStorage.getItem(ACTIVE_MEET_STORAGE_KEY)) {
+          setActiveMeeting(parsed.activeMeeting);
+          try {
+            localStorage.setItem(ACTIVE_MEET_STORAGE_KEY, JSON.stringify(parsed.activeMeeting));
+          } catch {}
+        }
+      })
+      .catch(() => {});
+  }, [user?.id]);
+
+  const persistActiveMeeting = async (nextMeeting) => {
+    setActiveMeeting(nextMeeting);
+    try {
+      if (nextMeeting) {
+        localStorage.setItem(ACTIVE_MEET_STORAGE_KEY, JSON.stringify(nextMeeting));
+      } else {
+        localStorage.removeItem(ACTIVE_MEET_STORAGE_KEY);
+      }
+    } catch {}
+    if (user?.id) {
+      try {
+        const { data } = await supabase
+          .from('profiles')
+          .select('focus_reply')
+          .eq('id', user.id)
+          .limit(1);
+        let merged = {};
+        try {
+          const existing = data?.[0]?.focus_reply;
+          if (existing?.startsWith('{')) merged = JSON.parse(existing);
+        } catch {}
+        merged.activeMeeting = nextMeeting;
+        await supabase.from('profiles').upsert({
+          id: user.id,
+          username: user.username || '@piyush_dev',
+          full_name: user.name || 'Piyush Yadav',
+          focus_reply: JSON.stringify(merged),
+          updated_at: new Date().toISOString(),
+        });
+      } catch {}
+    }
+  };
 
   const [momInput, setMomInput] = useState(
     'Attended by Piyush Yadav, Placement Coordinator, and CSE Study Squad. Decided to freeze PDF resumes by Friday 6 PM. Scheduled DSA mock OA for Saturday 10 AM focusing on Sliding Window, Graphs, and SQL Joins. Assigned System Design OS/CN notes sharing.'
@@ -478,18 +516,21 @@ export default function WorkspaceHubView({
   const handleCreateScheduleMeet = (e) => {
     e.preventDefault();
     if (!newMeetTitle.trim()) return;
+    const selectedTarget = chats.find((c) => c.id === targetChatId);
     const created = {
       id: `mt_${Date.now()}`,
       title: newMeetTitle.trim(),
-      host: googleUser?.email ? `Host: ${googleUser.email}` : 'Scheduled by You (@piyush_dev)',
+      targetChatId,
+      targetChatName: selectedTarget?.name || 'Study Vault',
+      host: googleUser?.email ? `Host: ${googleUser.email}` : `Scheduled by ${user?.name || 'You'} (${user?.username || '@piyush_dev'})`,
       time: newMeetDateTime.trim() || 'Today • Instant Meet Link Ready',
       meetUrl: 'https://meet.google.com/new',
       type: newMeetType,
     };
-    setMeetings((prev) => [created, ...prev]);
+    persistActiveMeeting(created);
     setNewMeetTitle('');
     setNewMeetDateTime('');
-    onShowToast?.('Google Meet scheduled! Ready to join or share in chat.');
+    onShowToast?.('Google Meet scheduled and saved across tabs!');
   };
 
   const handleGenerateMoM = async () => {
@@ -524,9 +565,9 @@ export default function WorkspaceHubView({
   });
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-[#f0f2f5] dark:bg-[#0b141a] select-none overflow-hidden">
+    <div className="flex-1 h-full flex flex-col bg-white dark:bg-[#0b141a] overflow-hidden">
       {/* Balanced Two-Column Header: Left Title/Status/Tabs | Right Aesthetic Continue with Google Bar */}
-      <div className="min-h-[68px] px-4 sm:px-6 py-2.5 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#222e35] flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
+      <div className="min-h-[68px] px-4 sm:px-6 py-2.5 bg-white dark:bg-[#111b21] border-b border-[#e9edef] dark:border-[#222e35] flex flex-wrap items-center justify-between gap-3 flex-shrink-0">
         {/* Left Column: Title, API Status & Sub-Tab Switcher */}
         <div className="flex flex-wrap items-center gap-4 min-w-0">
           <div className="min-w-0">
@@ -691,15 +732,15 @@ export default function WorkspaceHubView({
                       }`}
                     >
                       <div className="flex items-center justify-between gap-2 mb-1">
-                        <span className="px-2 py-0.5 rounded-full bg-[#0055ff]/10 text-[#0055ff] dark:text-sky-400 text-[10.5px] font-bold">
+                        <span className="px-2 py-0.5 rounded-full bg-[#00a884]/10 text-[#00a884] text-[10.5px] font-bold">
                           {em.tag}
                         </span>
-                        <span className="text-[11px] text-[#8696a0]">{em.date}</span>
+                        <span className="font-numeric text-[11px] text-[#8696a0]">{em.date}</span>
                       </div>
-                      <h4 className={`text-[13.5px] truncate ${em.unread ? 'font-bold text-[#111b21] dark:text-white' : 'font-semibold text-[#111b21] dark:text-[#e9edef]'}`}>
+                      <h4 className={`text-[13.5px] truncate select-text cursor-text ${em.unread ? 'font-bold text-[#111b21] dark:text-white' : 'font-semibold text-[#111b21] dark:text-[#e9edef]'}`}>
                         {em.subject}
                       </h4>
-                      <p className="text-[11.5px] text-[#667781] dark:text-[#8696a0] truncate mt-0.5">
+                      <p className="text-[11.5px] text-[#667781] dark:text-[#8696a0] truncate mt-0.5 select-text cursor-text">
                         {em.from}
                       </p>
                     </div>
@@ -713,19 +754,19 @@ export default function WorkspaceHubView({
           <div className="flex-1 overflow-y-auto p-4 sm:p-6 space-y-4 pb-24 md:pb-6">
             {selectedEmail && (
               <div className="bg-white dark:bg-[#111b21] rounded-2xl p-5 sm:p-6 border border-black/5 dark:border-white/10 shadow-sm space-y-4 max-w-3xl">
-                <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-slate-200 dark:border-white/10">
-                  <div className="min-w-0 flex-1">
-                    <h3 className="text-[18px] font-bold text-[#111b21] dark:text-white">
+                <div className="flex flex-wrap items-start justify-between gap-3 pb-4 border-b border-[#e9edef] dark:border-[#222e35]">
+                  <div className="min-w-0 flex-1 select-text cursor-text">
+                    <h3 className="text-[18px] font-bold text-[#111b21] dark:text-[#e9edef]">
                       {selectedEmail.subject}
                     </h3>
                     <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0] mt-1">
-                      From: <span className="font-semibold text-[#111b21] dark:text-[#e9edef]">{selectedEmail.from}</span> • {selectedEmail.date}
+                      From: <span className="font-semibold text-[#111b21] dark:text-[#e9edef]">{selectedEmail.from}</span> • <span className="font-numeric">{selectedEmail.date}</span>
                     </p>
                   </div>
                   <select
                     value={targetChatId}
                     onChange={(e) => setTargetChatId(e.target.value)}
-                    className="px-2.5 py-1.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-[11.5px] font-semibold text-[#111b21] dark:text-white border border-black/5 dark:border-white/10"
+                    className="px-2.5 py-1.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-[11.5px] font-semibold text-[#111b21] dark:text-white border border-[#e9edef] dark:border-[#222e35]"
                   >
                     {chats.map((c) => (
                       <option key={c.id} value={c.id}>
@@ -735,7 +776,7 @@ export default function WorkspaceHubView({
                   </select>
                 </div>
 
-                <div className="text-[14px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed select-text">
+                <div className="text-[14px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed select-text cursor-text">
                   {selectedEmail.body}
                 </div>
 
@@ -745,7 +786,7 @@ export default function WorkspaceHubView({
                     type="button"
                     onClick={handleSummarizeEmail}
                     disabled={summarizingEmail}
-                    className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#0055ff] to-[#7b2cbf] text-white text-[12.5px] font-semibold flex items-center gap-1.5 cursor-pointer shadow-sm"
+                    className="px-3.5 py-2 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white text-[12.5px] font-semibold flex items-center gap-1.5 cursor-pointer"
                   >
                     {summarizingEmail ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                     <span>AI Summarize</span>
@@ -781,11 +822,11 @@ export default function WorkspaceHubView({
 
                 {/* AI Summary Result */}
                 {emailSummary && (
-                  <div className="p-4 rounded-xl bg-[#0055ff]/10 border border-[#0055ff]/25 space-y-1.5 animate-fadeIn">
-                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#0055ff] dark:text-sky-400">
+                  <div className="p-4 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-[#e9edef] dark:border-[#222e35] space-y-1.5 animate-fadeIn">
+                    <span className="text-[11px] font-bold uppercase tracking-wider text-[#00a884]">
                       Nexo AI Placement Summary
                     </span>
-                    <div className="text-[13.5px] text-[#111b21] dark:text-white whitespace-pre-wrap leading-relaxed">
+                    <div className="text-[13.5px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed select-text cursor-text">
                       {emailSummary}
                     </div>
                   </div>
@@ -938,30 +979,30 @@ export default function WorkspaceHubView({
                 </div>
               </form>
 
-              {meetings.map((mt) => (
+              {activeMeeting ? (
                 <div
-                  key={mt.id}
-                  className="p-4 rounded-2xl bg-white dark:bg-[#111b21] border border-black/5 dark:border-white/10 shadow-sm space-y-2.5"
+                  key={activeMeeting.id}
+                  className="p-4 rounded-2xl bg-white dark:bg-[#111b21] border border-[#e9edef] dark:border-[#222e35] shadow-sm space-y-2.5"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="px-2.5 py-0.5 rounded-full bg-[#0055ff]/10 text-[#0055ff] dark:text-sky-400 text-[11px] font-bold">
-                      {mt.type}
+                    <span className="px-2.5 py-0.5 rounded-full bg-[#00a884]/15 text-[#00a884] text-[11px] font-bold">
+                      {activeMeeting.type}
                     </span>
-                    <span className="text-[12px] font-medium text-[#667781] dark:text-[#8696a0]">
-                      {mt.time}
+                    <span className="font-numeric text-[12px] font-medium text-[#667781] dark:text-[#8696a0]">
+                      {activeMeeting.time}
                     </span>
                   </div>
 
-                  <h4 className="text-[15px] font-bold text-[#111b21] dark:text-white">
-                    {mt.title}
+                  <h4 className="text-[15px] font-bold text-[#111b21] dark:text-[#e9edef]">
+                    {activeMeeting.title}
                   </h4>
                   <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0]">
-                    {mt.host} • <span className="font-mono text-[#00a884]">{mt.meetUrl}</span>
+                    With <strong className="text-[#111b21] dark:text-[#e9edef]">{activeMeeting.targetChatName || 'Study Peer'}</strong> • {activeMeeting.host}
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <a
-                      href={mt.meetUrl}
+                      href={activeMeeting.meetUrl}
                       target="_blank"
                       rel="noreferrer"
                       className="px-3.5 py-1.5 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white text-[12.5px] font-bold inline-flex items-center gap-1.5"
@@ -973,30 +1014,45 @@ export default function WorkspaceHubView({
                     <button
                       type="button"
                       onClick={() => {
-                        onSendMessageToChat?.(targetChatId, {
-                          text: `📹 **Google Meet Invite: ${mt.title}**\n🕒 ${mt.time}\n🔗 Join Link: ${mt.meetUrl}`,
+                        onSendMessageToChat?.(activeMeeting.targetChatId || targetChatId, {
+                          text: `📹 **Google Meet Invite: ${activeMeeting.title}**\n🕒 ${activeMeeting.time}\n🔗 Join Link: ${activeMeeting.meetUrl}`,
                         });
                         onShowToast?.('Meet link shared in chat!');
                       }}
                       className="px-3.5 py-1.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] hover:bg-slate-200 dark:hover:bg-[#2a3942] text-[#111b21] dark:text-white text-[12.5px] font-semibold inline-flex items-center gap-1.5 cursor-pointer"
                     >
-                      <Share2 className="w-3.5 h-3.5 text-[#0055ff]" />
+                      <Share2 className="w-3.5 h-3.5 text-[#00a884]" />
                       <span>Share Meet Link in Chat</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        persistActiveMeeting(null);
+                        onShowToast?.('Scheduled meeting cleared.');
+                      }}
+                      className="ml-auto px-3 py-1.5 rounded-xl bg-rose-500/10 hover:bg-rose-500/20 text-rose-600 dark:text-rose-400 text-[12px] font-semibold cursor-pointer"
+                    >
+                      Clear / Cancel
                     </button>
                   </div>
                 </div>
-              ))}
+              ) : (
+                <div className="p-5 rounded-2xl bg-white dark:bg-[#111b21] border border-dashed border-[#e9edef] dark:border-[#222e35] text-center text-[13px] text-[#667781] dark:text-[#8696a0]">
+                  No active meeting scheduled. Fill the form above to schedule a Google Meet — it will stay saved across tabs and reloads.
+                </div>
+              )}
             </div>
 
             {/* Right: AI Minutes of Meeting (MoM) Generator */}
             <div className="lg:col-span-6">
-              <div className="p-5 rounded-2xl bg-white dark:bg-[#111b21] border border-black/5 dark:border-white/10 shadow-sm space-y-4">
+              <div className="p-5 rounded-2xl bg-white dark:bg-[#111b21] border border-[#e9edef] dark:border-[#222e35] space-y-4">
                 <div className="flex items-center gap-2.5">
-                  <div className="p-2 rounded-xl bg-gradient-to-tr from-[#0055ff] to-[#7b2cbf] text-white">
+                  <div className="p-2 rounded-xl bg-[#00a884]/15 text-[#00a884]">
                     <FileText className="w-5 h-5" />
                   </div>
                   <div>
-                    <h3 className="text-[16px] font-bold text-[#111b21] dark:text-white">
+                    <h3 className="text-[16px] font-bold text-[#111b21] dark:text-[#e9edef]">
                       AI Minutes of Meeting (MoM) Generator
                     </h3>
                     <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">
@@ -1010,22 +1066,22 @@ export default function WorkspaceHubView({
                   value={momInput}
                   onChange={(e) => setMomInput(e.target.value)}
                   placeholder="Paste meeting discussion notes or call transcript..."
-                  className="w-full p-3 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-[13.5px] text-[#111b21] dark:text-white border border-transparent focus:border-[#0055ff] focus:outline-none"
+                  className="w-full p-3 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] text-[13.5px] text-[#111b21] dark:text-[#e9edef] border border-[#e9edef] dark:border-[#222e35] focus:border-[#00a884] focus:outline-none select-text cursor-text"
                 />
 
                 <button
                   type="button"
                   onClick={handleGenerateMoM}
                   disabled={generatingMom || !momInput.trim()}
-                  className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-[#0055ff] to-[#7b2cbf] text-white text-[13.5px] font-bold flex items-center justify-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                  className="w-full py-2.5 px-4 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white text-[13.5px] font-bold flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
                 >
                   {generatingMom ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4" />}
                   <span>Generate Structured MoM</span>
                 </button>
 
                 {momOutput && (
-                  <div className="p-4 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-[#0055ff]/25 space-y-3 animate-fadeIn">
-                    <div className="text-[13.5px] text-[#111b21] dark:text-white whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto">
+                  <div className="p-4 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-[#e9edef] dark:border-[#222e35] space-y-3 animate-fadeIn">
+                    <div className="text-[13.5px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed max-h-72 overflow-y-auto select-text cursor-text">
                       {momOutput}
                     </div>
                     <div className="flex flex-wrap gap-2 pt-2 border-t border-black/5 dark:border-white/10">

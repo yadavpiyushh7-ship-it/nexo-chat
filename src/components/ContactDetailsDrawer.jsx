@@ -49,6 +49,7 @@ export default function ContactDetailsDrawer({
               size="xl"
               isGroup={contact.isGroup}
               name={contact.name}
+              avatar={contact.avatar || contact.avatar_url}
               showOnline={contact.online}
               online={contact.online}
             />

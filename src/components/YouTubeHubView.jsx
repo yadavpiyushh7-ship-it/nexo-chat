@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
-import { Youtube, Search, Play, Sparkles, Share2, BookmarkPlus, X, Loader2, ChevronDown } from 'lucide-react';
+import { Search, Play, Sparkles, Share2, BookmarkPlus, X, Loader2, ChevronDown } from 'lucide-react';
+import { YouTubeLecturesIcon } from './WhatsAppIcons';
 import { requestAI } from '../lib/aiClient';
 import { YOUTUBE_CS_CATALOG, filterAndRankCatalog } from '../data/youtubeCatalog';
 import { useGoogleAuth } from '../lib/googleApis';
@@ -177,12 +178,12 @@ export default function YouTubeHubView({ chats = [], onSendMessageToChat, onSave
   const hasMoreVideos = filteredVideos.length > visibleCount;
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-[#f0f2f5] dark:bg-[#0c1317] select-none overflow-hidden">
+    <div className="flex-1 h-full flex flex-col bg-white dark:bg-[#0b141a] overflow-hidden">
       {/* Header */}
-      <div className="h-[64px] px-4 sm:px-6 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between flex-shrink-0 gap-3">
+      <div className="h-[64px] px-4 sm:px-6 bg-white dark:bg-[#111b21] border-b border-[#e9edef] dark:border-[#222e35] flex items-center justify-between flex-shrink-0 gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
-          <div className="p-2 rounded-xl bg-rose-600 text-white">
-            <Youtube className="w-5 h-5" />
+          <div className="p-2 rounded-xl bg-white dark:bg-[#111b21] border border-[#e9edef] dark:border-[#222e35]">
+            <YouTubeLecturesIcon active />
           </div>
           <div className="min-w-0">
             <h2 className="text-[17px] font-bold text-[#111b21] dark:text-white truncate">
@@ -269,7 +270,7 @@ export default function YouTubeHubView({ chats = [], onSendMessageToChat, onSave
                   type="button"
                   onClick={() => handleGenerateNotes(linkInput)}
                   disabled={notesLoading || !linkInput.trim()}
-                  className="px-3.5 py-2 rounded-xl bg-gradient-to-r from-[#0055ff] to-[#7b2cbf] disabled:opacity-50 text-white text-[12.5px] font-bold flex items-center gap-1.5 cursor-pointer"
+                  className="px-3.5 py-2 rounded-xl bg-[#00a884] hover:bg-[#008f6f] disabled:opacity-50 text-white text-[12.5px] font-bold flex items-center gap-1.5 cursor-pointer"
                 >
                   {notesLoading ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
                   <span>AI Notes</span>
@@ -322,7 +323,7 @@ export default function YouTubeHubView({ chats = [], onSendMessageToChat, onSave
                   </button>
                 </div>
               </div>
-              <div className="text-[13.5px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto bg-[#f0f2f5] dark:bg-[#202c33] p-4 rounded-xl">
+              <div className="text-[13.5px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed max-h-80 overflow-y-auto bg-[#f0f2f5] dark:bg-[#202c33] p-4 rounded-xl select-text cursor-text">
                 {generatedNotes}
               </div>
             </div>

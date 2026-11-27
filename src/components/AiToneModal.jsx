@@ -90,13 +90,13 @@ export default function AiToneModal({ initialText = '', initialMode = 'rewrite',
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/55 backdrop-blur-xs animate-fadeIn font-sans">
       <div className="w-full max-w-xl bg-white dark:bg-[#202c33] rounded-2xl p-5 sm:p-6 relative border border-slate-200 dark:border-white/10 shadow-2xl flex flex-col max-h-[90vh]">
         {/* Header */}
-        <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-white/10 flex-shrink-0">
+        <div className="flex items-center justify-between pb-3.5 border-b border-[#e9edef] dark:border-[#222e35] flex-shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-[#0055ff] via-[#7b2cbf] to-[#d946ef] text-white shadow-sm">
+            <div className="p-2 rounded-xl bg-[#00a884]/15 text-[#00a884]">
               <Wand2 className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-[16.5px] font-bold text-[#111b21] dark:text-white">
+              <h3 className="text-[16.5px] font-bold text-[#111b21] dark:text-[#e9edef]">
                 Nexo AI Placement Assistant
               </h3>
               <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">
@@ -234,7 +234,7 @@ export default function AiToneModal({ initialText = '', initialMode = 'rewrite',
                   <span>{copied ? 'Copied' : 'Copy'}</span>
                 </button>
               </div>
-              <p className="text-[13.5px] text-[#111b21] dark:text-white leading-relaxed whitespace-pre-wrap">
+              <p className="text-[13.5px] text-[#111b21] dark:text-[#e9edef] leading-relaxed whitespace-pre-wrap select-text cursor-text">
                 {output}
               </p>
             </div>
@@ -291,7 +291,7 @@ export default function AiToneModal({ initialText = '', initialMode = 'rewrite',
                 onApply(output);
                 onClose();
               }}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-[#0055ff] to-[#7b2cbf] text-white text-[13px] font-semibold flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="px-4 py-2 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white text-[13px] font-semibold flex items-center gap-1.5 cursor-pointer"
             >
               <Check className="w-4 h-4" />
               <span>Insert into Chat</span>

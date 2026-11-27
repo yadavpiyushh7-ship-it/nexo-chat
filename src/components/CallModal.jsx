@@ -18,7 +18,12 @@ import AvatarIcon from './AvatarIcon';
 import { supabase } from '../lib/supabase';
 import { openPreferredMediaStream } from '../lib/mediaDevices';
 
-export default function CallModal({ call, currentUser, onEndCall, onSaveCallRecording }) {
+const normalizeHandle = (h) => String(h || '').trim().replace(/^@+/, '').toLowerCase();
+const isValidUUID = (str) =>
+  typeof str === 'string' &&
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+export default function CallModal({ call, currentUser, onEndCall, onSaveCallRecording, onSendCallSignal }) {
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isVideoOff, setIsVideoOff] = useState(call?.type !== 'video');
@@ -62,15 +67,16 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
   const recordedChunksRef = useRef([]);
   const recTimerRef = useRef(null);
 
-  const isVideoCall = call?.type === 'video';
+  const isVideoCall = call?.type === 'video' || call?.call_type === 'video';
   const otherParty = call?.isIncoming ? call?.caller : (call?.contact || call?.recipient);
-  const otherPartyName = otherParty?.name || otherParty?.full_name || 'Nexo Peer';
-  const otherPartyHandle = otherParty?.handle || otherParty?.username || '@peer';
+  const otherPartyName = otherParty?.name || otherParty?.full_name || call?.caller_name || 'Nexo Peer';
+  const otherPartyHandle = otherParty?.handle || otherParty?.username || call?.caller_username || '@peer';
+  const normalizedOtherHandle = normalizeHandle(otherPartyHandle);
   const isBotOrLocalCall =
-    otherPartyHandle === '@placement_bot' ||
+    normalizedOtherHandle === 'placement_bot' ||
     otherParty?.id === 'chat_placement_bot' ||
     otherParty?.id === 'self_vault' ||
-    !otherParty?.recipientId;
+    Boolean(otherParty?.isSelfChat);
 
   useEffect(() => {
     const handleOutside = (e) => {
@@ -98,8 +104,39 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
 
   useEffect(() => {
     let isMounted = true;
-    const callId = call?.id || `call_${Date.now()}`;
-    let channel = null;
+    const callId = call?.call_id || call?.id || `call_${Date.now()}`;
+    const sendSignal = (eventName, payload) => {
+      if (onSendCallSignal) {
+        onSendCallSignal(eventName, payload);
+      } else if (channelRef.current) {
+        channelRef.current.send({ type: 'broadcast', event: eventName, payload });
+      }
+    };
+
+    const handleWindowSignal = async (e) => {
+      const { kind, payload } = e?.detail || {};
+      if (!payload) return;
+      const msgCallId = payload.call_id || payload.callId;
+      if (msgCallId !== callId) return;
+
+      if (kind === 'call-answer' && (payload.answer || payload.answer_sdp) && pcRef.current) {
+        try {
+          if (pcRef.current.signalingState !== 'stable') {
+            await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer || payload.answer_sdp));
+            setConnectionState('connected');
+          }
+        } catch {}
+      } else if (kind === 'ice-candidate' && payload.candidate && payload.senderId !== currentUser?.id && pcRef.current) {
+        try {
+          await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
+        } catch {}
+      } else if (kind === 'call-ended' && payload.senderId !== currentUser?.id) {
+        setConnectionState('ended');
+        setTimeout(() => handleHangup(false), 300);
+      }
+    };
+
+    window.addEventListener('nexo-call-signal', handleWindowSignal);
 
     const setupCall = async () => {
       try {
@@ -127,14 +164,11 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
           localVideoRef.current.srcObject = mediaInfo.stream;
         }
 
-        // For Bot / Mock Interview / Local Test calls: show connected state smoothly without triggering remote peer errors
+        // For Bot / Mock Interview / Self Vault local preview
         if (isBotOrLocalCall) {
           setConnectionState('connected');
           return;
         }
-
-        channel = supabase.channel('nexo-call-signaling');
-        channelRef.current = channel;
 
         const pc = new RTCPeerConnection({
           iceServers: [
@@ -157,74 +191,86 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
         };
 
         pc.onicecandidate = (event) => {
-          if (event.candidate && channelRef.current) {
-            channelRef.current.send({
-              type: 'broadcast',
-              event: 'ice-candidate',
-              payload: { callId, candidate: event.candidate, senderId: currentUser?.id },
-            });
+          if (event.candidate) {
+            sendSignal('ice-candidate', { callId, call_id: callId, candidate: event.candidate, senderId: currentUser?.id });
           }
         };
 
-        channel
-          .on('broadcast', { event: 'call-answer' }, async ({ payload }) => {
-            if (payload?.callId === callId && payload?.answer && pcRef.current) {
+        const incomingOffer = call?.offer_sdp || call?.offer;
+        if (call?.isIncoming && incomingOffer) {
+          try {
+            await pc.setRemoteDescription(new RTCSessionDescription(incomingOffer));
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            sendSignal('call-answer', { callId, call_id: callId, answer, answer_sdp: answer, senderId: currentUser?.id });
+            setConnectionState('connected');
+          } catch {}
+        } else {
+          try {
+            setConnectionState('ringing');
+            const offer = await pc.createOffer();
+            await pc.setLocalDescription(offer);
+
+            // Resolve receiver UUID from profiles if not present
+            let targetUuid = otherParty?.recipientId || (isValidUUID(otherParty?.id) ? otherParty.id : null);
+            if (!targetUuid && normalizedOtherHandle) {
               try {
-                if (pcRef.current.signalingState !== 'stable') {
-                  await pcRef.current.setRemoteDescription(new RTCSessionDescription(payload.answer));
-                  setConnectionState('connected');
-                }
+                const { data } = await supabase
+                  .from('profiles')
+                  .select('id')
+                  .ilike('username', `@${normalizedOtherHandle}`)
+                  .limit(1);
+                if (data?.[0]?.id && isValidUUID(data[0].id)) targetUuid = data[0].id;
               } catch {}
             }
-          })
-          .on('broadcast', { event: 'ice-candidate' }, async ({ payload }) => {
-            if (payload?.callId === callId && payload?.candidate && payload?.senderId !== currentUser?.id && pcRef.current) {
-              try {
-                await pcRef.current.addIceCandidate(new RTCIceCandidate(payload.candidate));
-              } catch {}
+
+            const callPayload = {
+              call_id: callId,
+              callId,
+              caller_id: currentUser?.id,
+              caller_name: currentUser?.name || 'Nexo Peer',
+              caller_username: currentUser?.username || '@peer',
+              caller_avatar: currentUser?.avatar || currentUser?.avatar_url || null,
+              callee_id: targetUuid,
+              callee_username: normalizedOtherHandle,
+              call_type: isVideoCall ? 'video' : 'voice',
+              offer_sdp: offer,
+              caller: currentUser,
+              recipientId: targetUuid,
+              recipientHandle: otherPartyHandle,
+              offer,
+              type: isVideoCall ? 'video' : 'voice',
+            };
+
+            sendSignal('incoming_call', callPayload);
+
+            // DB Fallback row inside Supabase messages ("__NEXO_CALL__:") so background tabs/devices never miss
+            if (isValidUUID(currentUser?.id) && isValidUUID(targetUuid)) {
+              const dbCallRow = `__NEXO_CALL__:${JSON.stringify({
+                call_id: callId,
+                caller_id: currentUser.id,
+                caller_name: currentUser?.name || 'Nexo Peer',
+                caller_username: currentUser?.username || '@peer',
+                caller_avatar: currentUser?.avatar || currentUser?.avatar_url || null,
+                callee_id: targetUuid,
+                callee_username: normalizedOtherHandle,
+                call_type: isVideoCall ? 'video' : 'voice',
+                offer_sdp: offer,
+              })}`;
+              supabase
+                .from('messages')
+                .insert({
+                  id: `call_${callId}`,
+                  sender_id: currentUser.id,
+                  receiver_id: targetUuid,
+                  content: dbCallRow,
+                  status: 'sent',
+                })
+                .then(() => {})
+                .catch(() => {});
             }
-          })
-          .on('broadcast', { event: 'call-ended' }, ({ payload }) => {
-            if (payload?.callId === callId) {
-              setConnectionState('ended');
-              setTimeout(handleHangup, 400);
-            }
-          })
-          .subscribe(async (status) => {
-            if (status === 'SUBSCRIBED') {
-              if (call?.isIncoming && call?.offer) {
-                try {
-                  await pc.setRemoteDescription(new RTCSessionDescription(call.offer));
-                  const answer = await pc.createAnswer();
-                  await pc.setLocalDescription(answer);
-                  channel.send({
-                    type: 'broadcast',
-                    event: 'call-answer',
-                    payload: { callId, answer, senderId: currentUser?.id },
-                  });
-                  setConnectionState('connected');
-                } catch {}
-              } else {
-                try {
-                  setConnectionState('ringing');
-                  const offer = await pc.createOffer();
-                  await pc.setLocalDescription(offer);
-                  channel.send({
-                    type: 'broadcast',
-                    event: 'incoming_call',
-                    payload: {
-                      callId,
-                      caller: currentUser,
-                      recipientId: otherParty?.recipientId || otherParty?.id,
-                      recipientHandle: otherPartyHandle,
-                      offer,
-                      type: call.type,
-                    },
-                  });
-                } catch {}
-              }
-            }
-          });
+          } catch {}
+        }
       } catch (mediaErr) {
         console.warn('Camera/Mic hardware unavailable fallback:', mediaErr);
         if (isMounted) setConnectionState(isBotOrLocalCall ? 'connected' : 'ringing');
@@ -235,13 +281,13 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
 
     return () => {
       isMounted = false;
+      window.removeEventListener('nexo-call-signal', handleWindowSignal);
       if (recTimerRef.current) clearInterval(recTimerRef.current);
       if (localStreamRef.current) localStreamRef.current.getTracks().forEach((t) => t.stop());
       if (screenStreamRef.current) screenStreamRef.current.getTracks().forEach((t) => t.stop());
       if (pcRef.current) pcRef.current.close();
-      if (channelRef.current) supabase.removeChannel(channelRef.current);
     };
-  }, [call?.id, isVideoCall]);
+  }, [call?.id, call?.call_id, isVideoCall]);
 
   const toggleMute = () => {
     if (localStreamRef.current) {
@@ -459,17 +505,20 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
     }
   };
 
-  const handleHangup = () => {
+  const handleHangup = (notifyRemote = true) => {
     if (isRecording) {
       try { mediaRecorderRef.current?.stop(); } catch {}
     }
     if (recTimerRef.current) clearInterval(recTimerRef.current);
-    if (channelRef.current && call?.id) {
+    const activeCallId = call?.call_id || call?.id;
+    if (notifyRemote && activeCallId) {
+      const endPayload = { callId: activeCallId, call_id: activeCallId, senderId: currentUser?.id };
       try {
-        channelRef.current.send({
+        onSendCallSignal?.('call-ended', endPayload);
+        channelRef.current?.send({
           type: 'broadcast',
           event: 'call-ended',
-          payload: { callId: call.id, senderId: currentUser?.id },
+          payload: endPayload,
         });
       } catch {}
     }
@@ -478,7 +527,7 @@ export default function CallModal({ call, currentUser, onEndCall, onSaveCallReco
     if (pcRef.current) pcRef.current.close();
     onEndCall({
       durationSeconds: callDuration,
-      type: call?.type || 'voice',
+      type: call?.call_type || call?.type || 'voice',
       contact: otherParty,
       chatId: otherParty?.id || otherParty?.recipientId || null,
     });

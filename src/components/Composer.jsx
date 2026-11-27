@@ -511,13 +511,13 @@ export default function Composer({
   const hasContent = Boolean(text.trim() || imagePreview || pendingAttachment || pendingCodeBlock);
 
   return (
-    <div className="p-2 sm:p-2.5 bg-[#f0f2f5] dark:bg-[#111b21] border-t border-[#e9edef] dark:border-[#222e35] z-20 transition-colors duration-150 relative select-none">
+    <div className="p-2 sm:p-2.5 bg-white dark:bg-[#111b21] border-t border-[#e9edef] dark:border-[#222e35] z-20 transition-colors duration-150 relative">
       
       {/* 1. Reply Banner */}
       {replyingTo && (
-        <div className="mb-2 mx-2 p-2.5 rounded-xl bg-white dark:bg-[#111b21] border-l-4 border-[#0055ff] shadow-xs flex items-center justify-between text-[13px] animate-fadeIn">
-          <div className="truncate mr-2">
-            <span className="font-semibold text-[#0055ff] mr-1.5">
+        <div className="mb-2 mx-2 p-2.5 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border-l-4 border-[#00a884] flex items-center justify-between text-[13px] animate-fadeIn">
+          <div className="truncate mr-2 select-text cursor-text">
+            <span className="font-semibold text-[#00a884] mr-1.5">
               Replying to {replyingTo.sender}:
             </span>
             <span className="text-[#54656f] dark:text-[#aebac1] truncate">
@@ -876,7 +876,7 @@ export default function Composer({
 
           <div className="flex items-center gap-1.5 sm:gap-2 px-1 sm:px-1.5 py-0.5">
             {/* Unified Floating Pill Input Bar */}
-            <div className="flex-1 flex items-center bg-white dark:bg-[#202c33] rounded-full px-2 sm:px-3 py-1 border border-[#e9edef] dark:border-[#222e35] min-w-0">
+            <div className="flex-1 flex items-center bg-[#f0f2f5] dark:bg-[#202c33] rounded-full px-2 sm:px-3 py-1 border border-[#e9edef] dark:border-[#222e35] min-w-0">
               {/* Emoji Toggle */}
               <button
                 id="emoji-toggle-btn"

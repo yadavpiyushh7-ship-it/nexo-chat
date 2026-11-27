@@ -137,7 +137,7 @@ export default function StarredMessagesModal({
                   </div>
 
                   {/* Body */}
-                  <div className="text-[13.5px] leading-relaxed text-[#111b21] dark:text-[#e9edef] bg-white dark:bg-[#111b21] p-3 rounded-lg border border-black/5 dark:border-white/5 whitespace-pre-wrap break-words font-sans">
+                  <div className="text-[13.5px] leading-relaxed text-[#111b21] dark:text-[#e9edef] bg-white dark:bg-[#111b21] p-3 rounded-lg border border-[#e9edef] dark:border-[#222e35] whitespace-pre-wrap break-words font-sans select-text cursor-text">
                     {item.text || (item.fileName ? `📎 Attached file: ${item.fileName} (${item.fileSize || ''})` : 'Saved media item')}
                   </div>
 

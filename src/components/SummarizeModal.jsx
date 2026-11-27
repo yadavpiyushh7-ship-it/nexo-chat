@@ -36,13 +36,13 @@ export default function SummarizeModal({ chat, onClose, onSaveToVault }) {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-xs animate-fadeIn font-sans">
       <div className="w-full max-w-md bg-white dark:bg-[#202c33] rounded-2xl p-6 relative border border-slate-200 dark:border-white/10 shadow-2xl">
-        <div className="flex items-center justify-between pb-3.5 border-b border-slate-200 dark:border-white/10">
+        <div className="flex items-center justify-between pb-3.5 border-b border-[#e9edef] dark:border-[#222e35]">
           <div className="flex items-center gap-2.5">
-            <div className="p-2 rounded-xl bg-gradient-to-tr from-[#0055ff] via-[#7b2cbf] to-[#d946ef] text-white shadow-md">
+            <div className="p-2 rounded-xl bg-[#00a884]/15 text-[#00a884]">
               <Sparkles className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-[16px] font-bold text-[#111b21] dark:text-white">
+              <h3 className="text-[16px] font-bold text-[#111b21] dark:text-[#e9edef]">
                 Summarize Lecture / Thread
               </h3>
               <p className="text-[12px] text-[#667781] dark:text-[#8696a0]">
@@ -58,11 +58,11 @@ export default function SummarizeModal({ chat, onClose, onSaveToVault }) {
         <div className="mt-4 min-h-[150px] flex items-center justify-center">
           {loading ? (
             <div className="flex flex-col items-center gap-2.5 text-[#8696a0]">
-              <Loader2 className="w-6 h-6 animate-spin text-[#0055ff]" />
+              <Loader2 className="w-6 h-6 animate-spin text-[#00a884]" />
               <span className="text-[13px]">Synthesizing notes & deadlines with Gemini AI...</span>
             </div>
           ) : (
-            <div className="w-full text-[13.5px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed bg-[#f0f2f5] dark:bg-[#111b21] p-4 rounded-xl border border-black/5 dark:border-white/5 max-h-[50vh] overflow-y-auto">
+            <div className="w-full text-[13.5px] text-[#111b21] dark:text-[#e9edef] whitespace-pre-wrap leading-relaxed bg-[#f0f2f5] dark:bg-[#111b21] p-4 rounded-xl border border-[#e9edef] dark:border-[#222e35] max-h-[50vh] overflow-y-auto select-text cursor-text">
               {summary}
             </div>
           )}

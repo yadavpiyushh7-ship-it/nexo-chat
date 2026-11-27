@@ -333,6 +333,7 @@ export default function ChatWindow({
                 size="md"
                 isGroup={chat.isGroup}
                 name={chat.name}
+                avatar={chat.avatar}
                 showOnline={chat.online}
                 online={chat.online}
               />
@@ -556,37 +557,58 @@ export default function ChatWindow({
               );
             }
 
-            const isMe = msg.isSender;
-            const isDeletedForEveryone = msg.deletedForEveryone;
-            const isEditing = editingMsgId === msg.id;
-            const localizedRawText = localizeMessageText(msg) || msg.content || '';
-            const transState = translatedMap[msg.id];
+            let rawMsg = msg;
+            const rawEnvelope = typeof msg.text === 'string' && msg.text.startsWith('__NEXO_IMG__:')
+              ? msg.text
+              : typeof msg.content === 'string' && msg.content.startsWith('__NEXO_IMG__:')
+              ? msg.content
+              : null;
+            if (rawEnvelope) {
+              try {
+                const parsedImg = JSON.parse(rawEnvelope.slice('__NEXO_IMG__:'.length));
+                rawMsg = {
+                  ...msg,
+                  image: parsedImg.image_url || msg.image,
+                  is_hd: Boolean(parsedImg.is_hd || msg.is_hd),
+                  fileName: parsedImg.file_name || msg.fileName,
+                  fileSize: parsedImg.file_size || msg.fileSize,
+                  text: parsedImg.caption || '',
+                  content: parsedImg.caption || '',
+                };
+              } catch {}
+            }
+
+            const isMe = rawMsg.isSender;
+            const isDeletedForEveryone = rawMsg.deletedForEveryone;
+            const isEditing = editingMsgId === rawMsg.id;
+            const localizedRawText = localizeMessageText(rawMsg) || rawMsg.content || '';
+            const transState = translatedMap[rawMsg.id];
             const activeDisplayText = transState?.showTranslated ? transState.translatedText : localizedRawText;
             const segments = parseMessageSegments(activeDisplayText || '');
-            const fileExt = msg.fileExt || (msg.fileName && msg.fileName.includes('.') ? msg.fileName.split('.').pop().toUpperCase() : null);
+            const fileExt = rawMsg.fileExt || (rawMsg.fileName && rawMsg.fileName.includes('.') ? rawMsg.fileName.split('.').pop().toUpperCase() : null);
 
             return (
               <div
-                key={msg.id}
+                key={rawMsg.id}
                 className={`flex flex-col group ${isMe ? 'items-end' : 'items-start'} my-1 relative`}
               >
                 {/* Optional Quote Card */}
-                {msg.quote && !isDeletedForEveryone && (
-                  <div className="text-[12px] px-2.5 py-1 mb-0.5 rounded-t-xl border-l-4 border-[#0055ff] bg-black/5 dark:bg-white/5 max-w-[78%] md:max-w-[62%] truncate text-[#54656f] dark:text-[#8696a0]">
-                    <span className="font-semibold text-[#0055ff] mr-1.5">
-                      {msg.quote.sender}:
+                {rawMsg.quote && !isDeletedForEveryone && (
+                  <div className="text-[12px] px-2.5 py-1 mb-0.5 rounded-t-xl border-l-4 border-[#00a884] bg-[#f0f2f5] dark:bg-[#202c33] max-w-[80vw] sm:max-w-[78%] md:max-w-[62%] truncate text-[#54656f] dark:text-[#8696a0] select-text cursor-text">
+                    <span className="font-semibold text-[#00a884] mr-1.5">
+                      {rawMsg.quote.sender}:
                     </span>
-                    {msg.quote.text}
+                    {rawMsg.quote.text}
                   </div>
                 )}
 
-                {/* Compact Message Bubble (fit-content, max-w 62% desktop / 78% mobile, 8px 12px padding) */}
+                {/* Compact Message Bubble (fit-content, max-w 80vw mobile / 62% desktop, 8px 12px padding) */}
                 <div
-                  className={`relative w-fit max-w-[78%] md:max-w-[62%] min-w-0 break-words px-[12px] py-[8px] shadow-bubble transition-all ${
+                  className={`relative w-fit max-w-[80vw] sm:max-w-[78%] md:max-w-[62%] min-w-0 break-words px-[12px] py-[8px] select-text cursor-text transition-all duration-150 ${
                     isDeletedForEveryone
-                      ? 'bg-slate-100 dark:bg-[#182229] text-[#8696a0] rounded-2xl border border-dashed border-slate-300 dark:border-white/10'
+                      ? 'bg-[#f0f2f5] dark:bg-[#182229] text-[#8696a0] rounded-2xl border border-dashed border-[#e9edef] dark:border-[#222e35]'
                       : isMe
-                      ? 'rounded-2xl rounded-tr-none'
+                      ? 'rounded-2xl rounded-tr-none shadow-xs'
                       : 'bg-white dark:bg-[#202c33] text-[#111b21] dark:text-[#e9edef] rounded-2xl rounded-tl-none border border-[#e9edef] dark:border-[#222e35]'
                   }`}
                   style={isMe && !isDeletedForEveryone ? {
@@ -594,11 +616,18 @@ export default function ChatWindow({
                     color: 'var(--outgoing-bubble-text, #e9edef)'
                   } : undefined}
                 >
-                  {/* Sender Name Badge inside Incoming / Group Bubbles */}
-                  {!isMe && (chat.isGroup || msg.senderName) && !isDeletedForEveryone && (
-                    <span className="block text-[11px] font-bold text-[#00a884] dark:text-[#00a884] mb-0.5 leading-tight">
-                      {msg.senderName || displayChat.name}
-                    </span>
+                  {/* Sender Avatar + Name Badge inside Incoming / Group Bubbles */}
+                  {!isMe && (chat.isGroup || rawMsg.senderName || chat.avatar || rawMsg.senderAvatar) && !isDeletedForEveryone && (
+                    <div className="flex items-center gap-1.5 mb-1 leading-tight">
+                      <AvatarIcon
+                        size="xs"
+                        name={rawMsg.senderName || displayChat.name}
+                        avatar={rawMsg.senderAvatar || (!chat.isGroup ? chat.avatar : null)}
+                      />
+                      <span className="text-[11px] font-bold text-[#00a884] dark:text-[#00a884]">
+                        {rawMsg.senderName || displayChat.name}
+                      </span>
+                    </div>
                   )}
 
                   {isDeletedForEveryone ? (
@@ -606,20 +635,20 @@ export default function ChatWindow({
                       <Ban className="w-3.5 h-3.5 flex-shrink-0" />
                       <span>{t('deletedMessage')}</span>
                       <span className="inline-block text-[10.5px] not-italic ml-2 text-[#8696a0] self-end font-numeric">
-                        {msg.time}
+                        {rawMsg.time}
                       </span>
                     </div>
                   ) : (
                     <>
                       {/* Optional Full-Resolution / HD Image with Zoomable Lightbox */}
-                      {msg.image && (
+                      {rawMsg.image && (
                         <div className="mb-1.5">
                           <div
                             onClick={() => {
                               setLightboxImage({
-                                src: msg.image,
-                                fileName: msg.fileName || 'Nexo_Image.jpg',
-                                isHd: Boolean(msg.is_hd),
+                                src: rawMsg.image,
+                                fileName: rawMsg.fileName || 'Nexo_Image.jpg',
+                                isHd: Boolean(rawMsg.is_hd),
                               });
                               setLightboxZoom(1);
                               setLightboxPan({ x: 0, y: 0 });
@@ -627,22 +656,22 @@ export default function ChatWindow({
                             className="relative group/img cursor-zoom-in overflow-hidden rounded-xl"
                           >
                             <img
-                              src={msg.image}
+                              src={rawMsg.image}
                               alt="Attachment"
                               className="rounded-xl max-h-72 w-full object-cover transition-transform duration-200 group-hover/img:scale-[1.01]"
                             />
-                            {msg.is_hd && (
+                            {rawMsg.is_hd && (
                               <span className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-black/70 text-[#00a884] border border-[#00a884]/60 text-[10px] font-bold tracking-wider backdrop-blur-xs">
                                 HD
                               </span>
                             )}
                           </div>
-                          {(msg.fileName || msg.fileSize) && (
+                          {(rawMsg.fileName || rawMsg.fileSize) && (
                             <div className="mt-1 flex items-center justify-between text-[11px] opacity-80 px-0.5">
-                              <span className="truncate font-medium">{msg.fileName || (msg.is_hd ? 'HD Image' : 'Image')}</span>
-                              {msg.fileSize && (
+                              <span className="truncate font-medium">{rawMsg.fileName || (rawMsg.is_hd ? 'HD Image' : 'Image')}</span>
+                              {rawMsg.fileSize && (
                                 <span className="font-numeric ml-2 flex-shrink-0">
-                                  {fileExt ? `${fileExt} • ` : ''}{msg.fileSize}
+                                  {fileExt ? `${fileExt} • ` : ''}{rawMsg.fileSize}
                                 </span>
                               )}
                             </div>
@@ -662,7 +691,7 @@ export default function ChatWindow({
                       )}
 
                       {/* Uncompressed Document / Code Attachment Card */}
-                      {!msg.image && !(msg.mediaType === 'audio' || msg.audio_url) && (msg.attachment || msg.mediaType === 'document' || msg.fileName) && (
+                      {!rawMsg.image && !(rawMsg.mediaType === 'audio' || rawMsg.audio_url) && (rawMsg.attachment || rawMsg.mediaType === 'document' || rawMsg.fileName) && (
                         <div className="mb-2 p-2.5 rounded-xl bg-black/5 dark:bg-white/10 border border-black/5 dark:border-white/10 flex items-center justify-between gap-3 max-w-sm">
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className={`px-2 py-1.5 min-w-[38px] rounded-xl ${getExtBadgeColor(fileExt)} text-white flex items-center justify-center flex-shrink-0 shadow-xs text-[10.5px] font-bold tracking-wider`}>
@@ -865,7 +894,7 @@ export default function ChatWindow({
                       ) : (
                         <>
                           {activeDisplayText && (
-                            <div className="text-[14px] leading-[1.38] break-words space-y-1">
+                            <div className="text-[14px] leading-[1.38] break-words space-y-1 select-text cursor-text">
                               {segments.map((seg, idx) =>
                                 seg.type === 'code' ? (
                                   <CodeBlock

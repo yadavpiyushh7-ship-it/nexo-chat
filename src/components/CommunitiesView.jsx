@@ -36,10 +36,10 @@ export default function CommunitiesView({ onSelectCommunityGroup }) {
   };
 
   return (
-    <div className="flex-1 h-full flex bg-[#f0f2f5] dark:bg-[#0c1317] select-none font-sans overflow-hidden">
+    <div className="flex-1 h-full flex bg-white dark:bg-[#0b141a] font-sans overflow-hidden">
       {/* Left Communities List */}
-      <div className="w-full md:w-[360px] lg:w-[400px] h-full flex flex-col bg-white dark:bg-[#111b21] border-r border-[#d1d7db] dark:border-[#2a3942] flex-shrink-0">
-        <div className="h-[60px] px-4 flex items-center justify-between border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 bg-[#f0f2f5] dark:bg-[#202c33] flex-shrink-0">
+      <div className="w-full md:w-[360px] lg:w-[400px] h-full flex flex-col bg-white dark:bg-[#111b21] border-r border-[#e9edef] dark:border-[#222e35] flex-shrink-0">
+        <div className="h-[60px] px-4 flex items-center justify-between border-b border-[#e9edef] dark:border-[#222e35] bg-white dark:bg-[#111b21] flex-shrink-0 select-none">
           {/* Section label in clean regular/medium weight (NOT bold!) */}
           <h2 className="text-[17px] font-medium text-[#111b21] dark:text-white">
             Communities

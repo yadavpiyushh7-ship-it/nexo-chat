@@ -1,8 +1,8 @@
 import React from 'react';
-import { Settings, Briefcase, Code2, Youtube } from 'lucide-react';
+import { Settings, Briefcase, Code2 } from 'lucide-react';
 import NexoLogo from './NexoLogo';
 import AvatarIcon from './AvatarIcon';
-import { ChatsIcon, CommunitiesIcon, CallsIcon } from './WhatsAppIcons';
+import { ChatsTabIcon, CommunitiesIcon, CallsTabIcon, YouTubeLecturesIcon } from './WhatsAppIcons';
 import { useLanguage } from '../contexts/LanguageContext';
 
 export default function NavigationRail({
@@ -16,12 +16,12 @@ export default function NavigationRail({
   const { t } = useLanguage();
 
   const navItems = [
-    { id: 'chats', label: t('chats'), icon: ChatsIcon, badge: unreadTotal },
+    { id: 'chats', label: t('chats'), icon: ChatsTabIcon, badge: unreadTotal },
     { id: 'workspace', label: t('workspace'), icon: Briefcase },
     { id: 'prep', label: t('prep'), icon: Code2 },
-    { id: 'youtube', label: t('youtube'), icon: Youtube },
+    { id: 'youtube', label: t('youtube'), icon: YouTubeLecturesIcon },
     { id: 'communities', label: t('communities'), icon: CommunitiesIcon },
-    { id: 'calls', label: t('calls'), icon: CallsIcon },
+    { id: 'calls', label: t('calls'), icon: CallsTabIcon },
   ];
 
   return (
@@ -53,13 +53,13 @@ export default function NavigationRail({
                   : 'text-[#54656f] dark:text-[#aebac1] hover:bg-[#e9edef]/70 dark:hover:bg-[#374248]/50 hover:text-[#111b21] dark:hover:text-white'
               }`}
             >
-              <div className={`relative px-3 py-1 rounded-full transition-all ${
-                isActive ? 'bg-[#d9fdd3] dark:bg-[#103629] text-[#00a884] dark:text-[#25d366]' : ''
+              <div className={`relative w-10 h-10 rounded-full flex items-center justify-center transition-all duration-150 ${
+                isActive ? 'bg-[#d9fdd3] text-[#008069] dark:bg-[#2a2f32] dark:text-white' : ''
               }`}>
-                <Icon className="w-[21px] h-[21px]" active={isActive} />
+                <Icon className={item.id === 'calls' ? 'w-[21px] h-[21px]' : 'w-[22px] h-[22px]'} active={isActive} />
 
                 {item.badge && item.badge > 0 ? (
-                  <span className="font-numeric absolute -top-1 -right-1 px-1 min-w-[16px] h-[16px] text-[10px] font-bold rounded-full bg-[#00a884] text-white flex items-center justify-center shadow">
+                  <span className="font-numeric absolute -top-0.5 -right-0.5 px-1 min-w-[16px] h-[16px] text-[10px] font-bold rounded-full bg-[#00a884] text-white flex items-center justify-center shadow">
                     {item.badge}
                   </span>
                 ) : null}
@@ -100,7 +100,13 @@ export default function NavigationRail({
           className="group relative p-0.5 rounded-full ring-2 ring-transparent hover:ring-[#25d366] transition-all cursor-pointer"
           title={`${user?.name || 'Profile'} (${user?.username || '@piyush_dev'})`}
         >
-          <AvatarIcon size="sm" name={user?.name || 'Piyush Yadav'} showOnline online />
+          <AvatarIcon
+            size="sm"
+            name={user?.name || 'Piyush Yadav'}
+            avatar={user?.avatar || user?.avatar_url}
+            showOnline
+            online
+          />
         </button>
       </div>
     </nav>

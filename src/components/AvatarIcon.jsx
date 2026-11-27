@@ -26,6 +26,7 @@ export default function AvatarIcon({
   size = 'md',
   isGroup = false,
   name = '',
+  avatar = null,
   className = '',
   showOnline = false,
   online = false,
@@ -46,16 +47,24 @@ export default function AvatarIcon({
 
   return (
     <div className={`relative flex-shrink-0 inline-flex items-center justify-center select-none ${className}`}>
-      <div
-        className={`${sizeConfig.box} rounded-full ${colorClass} flex items-center justify-center text-white/95 shadow-xs transition-transform`}
-        title={name || (isGroup ? 'Group' : 'User')}
-      >
-        {isGroup ? (
-          <Users className={`${sizeConfig.icon} text-white fill-white/80 ${iconClassName}`} />
-        ) : (
-          <User className={`${sizeConfig.icon} text-white fill-white/80 ${iconClassName}`} />
-        )}
-      </div>
+      {avatar ? (
+        <img
+          src={avatar}
+          alt={name || (isGroup ? 'Group' : 'User')}
+          className={`${sizeConfig.box} rounded-full object-cover shadow-xs border border-black/10 dark:border-white/10`}
+        />
+      ) : (
+        <div
+          className={`${sizeConfig.box} rounded-full ${colorClass} flex items-center justify-center text-white/95 shadow-xs transition-transform`}
+          title={name || (isGroup ? 'Group' : 'User')}
+        >
+          {isGroup ? (
+            <Users className={`${sizeConfig.icon} text-white fill-white/80 ${iconClassName}`} />
+          ) : (
+            <User className={`${sizeConfig.icon} text-white fill-white/80 ${iconClassName}`} />
+          )}
+        </div>
+      )}
 
       {showOnline && (
         <span

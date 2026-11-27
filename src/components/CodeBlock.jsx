@@ -220,7 +220,7 @@ export default function CodeBlock({ language = 'cpp', code = '', onExplainCode }
       </div>
 
       {/* Syntax-Highlighted Code Body */}
-      <pre className="p-3 overflow-x-auto text-[12.5px] leading-relaxed font-mono select-text">
+      <pre className="p-3 overflow-x-auto text-[12.5px] leading-relaxed font-mono select-text cursor-text">
         <code>
           {lines.map((line, i) => (
             <div key={i} className="table-row">

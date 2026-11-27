@@ -207,9 +207,9 @@ export default function EdTechPrepView({ chats = [], onSendMessageToChat, onSave
   };
 
   return (
-    <div className="flex-1 h-full flex flex-col bg-[#f0f2f5] dark:bg-[#0c1317] select-none font-sans overflow-hidden">
+    <div className="flex-1 h-full flex flex-col bg-white dark:bg-[#0b141a] font-sans overflow-hidden">
       {/* Header */}
-      <div className="h-[64px] px-4 sm:px-6 bg-[#f0f2f5] dark:bg-[#202c33] border-b border-[#d1d7db]/80 dark:border-[#2a3942]/80 flex items-center justify-between flex-shrink-0 gap-3">
+      <div className="h-[64px] px-4 sm:px-6 bg-white dark:bg-[#111b21] border-b border-[#e9edef] dark:border-[#222e35] flex items-center justify-between flex-shrink-0 gap-3">
         <div className="flex items-center gap-2.5 min-w-0">
           <div className="p-2 rounded-xl bg-[#0055ff] text-white">
             <Code2 className="w-5 h-5" />
