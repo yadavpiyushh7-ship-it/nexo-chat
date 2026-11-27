@@ -21,7 +21,13 @@ import {
   Presentation
 } from 'lucide-react';
 import { requestAI } from '../lib/aiClient';
-import { useGoogleAuth, exportPresentationToGoogleSlides } from '../lib/googleApis';
+import {
+  useGoogleAuth,
+  exportPresentationToGoogleSlides,
+  createGoogleMeetEvent,
+  launchInstantGoogleMeet,
+  sanitizeMeetUrl,
+} from '../lib/googleApis';
 import { supabase } from '../lib/supabase';
 
 const ACTIVE_MEET_STORAGE_KEY = 'nexo_active_meet_v1';
@@ -199,7 +205,9 @@ export default function WorkspaceHubView({
   const [activeMeeting, setActiveMeeting] = useState(() => {
     try {
       const saved = localStorage.getItem(ACTIVE_MEET_STORAGE_KEY);
-      return saved ? JSON.parse(saved) : null;
+      if (!saved) return null;
+      const parsed = JSON.parse(saved);
+      return parsed ? { ...parsed, meetUrl: sanitizeMeetUrl(parsed.meetUrl) } : null;
     } catch {
       return null;
     }
@@ -207,6 +215,7 @@ export default function WorkspaceHubView({
   const [newMeetTitle, setNewMeetTitle] = useState('');
   const [newMeetDateTime, setNewMeetDateTime] = useState('');
   const [newMeetType, setNewMeetType] = useState('Mock Interview');
+  const [schedulingMeet, setSchedulingMeet] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -220,9 +229,13 @@ export default function WorkspaceHubView({
         if (!raw || !raw.startsWith('{')) return;
         const parsed = JSON.parse(raw);
         if (parsed?.activeMeeting && !localStorage.getItem(ACTIVE_MEET_STORAGE_KEY)) {
-          setActiveMeeting(parsed.activeMeeting);
+          const sanitized = {
+            ...parsed.activeMeeting,
+            meetUrl: sanitizeMeetUrl(parsed.activeMeeting.meetUrl),
+          };
+          setActiveMeeting(sanitized);
           try {
-            localStorage.setItem(ACTIVE_MEET_STORAGE_KEY, JSON.stringify(parsed.activeMeeting));
+            localStorage.setItem(ACTIVE_MEET_STORAGE_KEY, JSON.stringify(sanitized));
           } catch {}
         }
       })
@@ -513,24 +526,62 @@ export default function WorkspaceHubView({
     onShowToast?.('Saved email (#Placement)!');
   };
 
-  const handleCreateScheduleMeet = (e) => {
+  const handleCreateScheduleMeet = async (e) => {
     e.preventDefault();
-    if (!newMeetTitle.trim()) return;
+    if (!newMeetTitle.trim() || schedulingMeet) return;
     const selectedTarget = chats.find((c) => c.id === targetChatId);
-    const created = {
-      id: `mt_${Date.now()}`,
-      title: newMeetTitle.trim(),
-      targetChatId,
-      targetChatName: selectedTarget?.name || 'Study Vault',
-      host: googleUser?.email ? `Host: ${googleUser.email}` : `Scheduled by ${user?.name || 'You'} (${user?.username || '@piyush_dev'})`,
-      time: newMeetDateTime.trim() || 'Today • Instant Meet Link Ready',
-      meetUrl: 'https://meet.google.com/new',
-      type: newMeetType,
-    };
-    persistActiveMeeting(created);
-    setNewMeetTitle('');
-    setNewMeetDateTime('');
-    onShowToast?.('Google Meet scheduled and saved across tabs!');
+    const titleStr = newMeetTitle.trim();
+    let meetUrl = 'https://meet.google.com/';
+    let createdViaCalendar = false;
+
+    setSchedulingMeet(true);
+    try {
+      if (googleToken) {
+        try {
+          const res = await createGoogleMeetEvent({
+            accessToken: googleToken,
+            summary: titleStr,
+            description: `${newMeetType} with ${selectedTarget?.name || 'Study Peer'} (Scheduled in Nexo)`,
+          });
+          meetUrl = res.meetUrl;
+          createdViaCalendar = true;
+        } catch (err) {
+          onShowToast?.(err?.message || 'Scheduled locally — reconnect Google for auto Calendar Meet URL.');
+        }
+      }
+
+      const created = {
+        id: `mt_${Date.now()}`,
+        title: titleStr,
+        targetChatId,
+        targetChatName: selectedTarget?.name || 'Study Vault',
+        host: googleUser?.email ? `Host: ${googleUser.email}` : `Scheduled by ${user?.name || 'You'} (${user?.username || '@piyush_dev'})`,
+        time: newMeetDateTime.trim() || 'Today • Instant Meet Link Ready',
+        meetUrl,
+        type: newMeetType,
+      };
+      await persistActiveMeeting(created);
+      setNewMeetTitle('');
+      setNewMeetDateTime('');
+      onShowToast?.(
+        createdViaCalendar
+          ? 'Google Calendar Meet scheduled with direct room link!'
+          : 'Meeting saved! Sign in with Google for direct room links.'
+      );
+    } finally {
+      setSchedulingMeet(false);
+    }
+  };
+
+  const handleInstantMeetWorkspace = async () => {
+    const { createdViaCalendar } = await launchInstantGoogleMeet({
+      accessToken: googleToken,
+      summary: 'Nexo Instant Google Meet',
+      onFallbackToast: (msg) => onShowToast?.(msg),
+    });
+    if (createdViaCalendar) {
+      onShowToast?.('Google Meet room created via Calendar API!');
+    }
   };
 
   const handleGenerateMoM = async () => {
@@ -914,15 +965,14 @@ export default function WorkspaceHubView({
                   <span>Google Meet Scheduler</span>
                 </h3>
                 <div className="flex items-center gap-2">
-                  <a
-                    href="https://meet.google.com/new"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold inline-flex items-center gap-1.5 shadow-xs"
+                  <button
+                    type="button"
+                    onClick={handleInstantMeetWorkspace}
+                    className="px-3 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold inline-flex items-center gap-1.5 shadow-xs cursor-pointer"
                   >
                     <Video className="w-3.5 h-3.5" />
                     <span>Create Instant Meet</span>
-                  </a>
+                  </button>
                   <select
                     value={targetChatId}
                     onChange={(e) => setTargetChatId(e.target.value)}
@@ -972,9 +1022,11 @@ export default function WorkspaceHubView({
                   </select>
                   <button
                     type="submit"
-                    className="px-3.5 py-2 rounded-xl bg-[#0055ff] hover:bg-[#0044cc] text-white text-[12.5px] font-bold cursor-pointer"
+                    disabled={schedulingMeet}
+                    className="px-3.5 py-2 rounded-xl bg-[#00a884] hover:bg-[#008f6f] disabled:opacity-60 text-white text-[12.5px] font-bold cursor-pointer flex items-center gap-1"
                   >
-                    Create
+                    {schedulingMeet ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : null}
+                    <span>{schedulingMeet ? 'Creating...' : 'Create'}</span>
                   </button>
                 </div>
               </form>
@@ -1001,15 +1053,28 @@ export default function WorkspaceHubView({
                   </p>
 
                   <div className="flex flex-wrap items-center gap-2 pt-1">
-                    <a
-                      href={activeMeeting.meetUrl}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="px-3.5 py-1.5 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white text-[12.5px] font-bold inline-flex items-center gap-1.5"
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const cleanUrl = sanitizeMeetUrl(activeMeeting.meetUrl);
+                        if (cleanUrl === 'https://meet.google.com/' && googleToken) {
+                          const res = await launchInstantGoogleMeet({
+                            accessToken: googleToken,
+                            summary: activeMeeting.title,
+                            onFallbackToast: (m) => onShowToast?.(m),
+                          });
+                          if (res?.meetUrl && res.meetUrl !== cleanUrl) {
+                            persistActiveMeeting({ ...activeMeeting, meetUrl: res.meetUrl });
+                          }
+                          return;
+                        }
+                        window.open(cleanUrl, '_blank', 'noopener,noreferrer');
+                      }}
+                      className="px-3.5 py-1.5 rounded-xl bg-[#00a884] hover:bg-[#008f6f] text-white text-[12.5px] font-bold inline-flex items-center gap-1.5 cursor-pointer"
                     >
                       <ExternalLink className="w-3.5 h-3.5" />
                       <span>Join Google Meet</span>
-                    </a>
+                    </button>
 
                     <button
                       type="button"

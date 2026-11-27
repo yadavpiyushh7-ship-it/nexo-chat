@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
 import { Phone, Video, PhoneIncoming, PhoneOutgoing, PhoneMissed, Link, Plus, Check, ExternalLink, FileText } from 'lucide-react';
 import AvatarIcon from './AvatarIcon';
+import { useGoogleAuth, launchInstantGoogleMeet } from '../lib/googleApis';
 
 export default function CallsView({ user, onStartCall, onOpenMeetAndMoM }) {
+  const { token: googleToken } = useGoogleAuth();
   const [copiedLink, setCopiedLink] = useState(false);
   const [callLogs] = useState([
     {
@@ -74,15 +76,19 @@ export default function CallsView({ user, onStartCall, onOpenMeetAndMoM }) {
               </div>
             </div>
             <div className="flex items-center gap-2">
-              <a
-                href="https://meet.google.com/new"
-                target="_blank"
-                rel="noreferrer"
-                className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold flex items-center justify-center gap-1.5 shadow-xs"
+              <button
+                type="button"
+                onClick={() =>
+                  launchInstantGoogleMeet({
+                    accessToken: googleToken,
+                    summary: 'Nexo Peer Mock Interview Meet',
+                  })
+                }
+                className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
                 <span>Create Instant Meet</span>
-              </a>
+              </button>
               <button
                 type="button"
                 onClick={() => onOpenMeetAndMoM?.()}

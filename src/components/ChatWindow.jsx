@@ -43,6 +43,7 @@ import AiToneModal from './AiToneModal';
 import SecurityVerifyModal from './SecurityVerifyModal';
 import { getWallpaperClass } from '../lib/themeUtils';
 import { useLanguage } from '../contexts/LanguageContext';
+import { useGoogleAuth, launchInstantGoogleMeet } from '../lib/googleApis';
 
 function AudioPlayerBubble({ src, duration }) {
   const [isPlaying, setIsPlaying] = useState(false);
@@ -178,6 +179,7 @@ export default function ChatWindow({
     translateMessageText
   } = useLanguage();
   const [callDropdownOpen, setCallDropdownOpen] = useState(false);
+  const { token: googleToken } = useGoogleAuth();
   const [headerMenuOpen, setHeaderMenuOpen] = useState(false);
   const [pollVotes, setPollVotes] = useState({});
   const [showSecurityModal, setShowSecurityModal] = useState(false);
@@ -439,11 +441,14 @@ export default function ChatWindow({
                   <div className="border-t border-[#d1d7db]/40 dark:border-white/10 my-1" />
 
                   <button
-                    onClick={() => {
-                      window.open('https://meet.google.com/new', '_blank', 'noopener,noreferrer');
-                      onSendMessage?.('📹 **Google Meet Started!**\n🔗 Join Instant Meet: https://meet.google.com/new\n📝 Open Workspace → Meet & MoM to auto-generate Minutes of Meeting.');
-                      onOpenMeetAndMoM?.();
+                    onClick={async () => {
                       setCallDropdownOpen(false);
+                      const { meetUrl } = await launchInstantGoogleMeet({
+                        accessToken: googleToken,
+                        summary: `Nexo Meet with ${displayChat.name}`,
+                      });
+                      onSendMessage?.(`📹 **Google Meet Started!**\n🔗 Join Meet: ${meetUrl}\n📝 Open Workspace → Meet & MoM to auto-generate Minutes of Meeting.`);
+                      onOpenMeetAndMoM?.();
                     }}
                     className="w-full px-4 py-2.5 flex items-center gap-3 text-[#111b21] dark:text-[#e9edef] hover:bg-[#f0f2f5] dark:hover:bg-[#111b21] text-left cursor-pointer transition-colors"
                   >

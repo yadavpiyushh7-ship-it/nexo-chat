@@ -4,6 +4,7 @@ export const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.readonly',
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/calendar.readonly',
+  'https://www.googleapis.com/auth/calendar.events',
   'https://www.googleapis.com/auth/contacts.readonly',
   'https://www.googleapis.com/auth/presentations',
   'https://www.googleapis.com/auth/spreadsheets',
@@ -363,4 +364,97 @@ export async function exportTrackerToGoogleSheets({ accessToken, title, rows }) 
     spreadsheetId,
     url: sheet.spreadsheetUrl || `https://docs.google.com/spreadsheets/d/${spreadsheetId}/edit`,
   };
+}
+
+/**
+ * Google Calendar API: Create a Calendar event with a dedicated Google Meet link (no /new redirect loop)
+ */
+export async function createGoogleMeetEvent({
+  accessToken,
+  summary = 'Nexo Study & Placement Meet',
+  description = 'Scheduled via Nexo Workspace Hub',
+  durationMinutes = 45,
+} = {}) {
+  if (!accessToken) {
+    throw new Error('Google OAuth access token required to provision a Calendar Meet link.');
+  }
+
+  const startDate = new Date(Date.now() + 2 * 60 * 1000);
+  const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
+
+  const res = await fetch(
+    'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        summary,
+        description,
+        start: { dateTime: startDate.toISOString() },
+        end: { dateTime: endDate.toISOString() },
+        conferenceData: {
+          createRequest: {
+            requestId: `nexo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            conferenceSolutionKey: { type: 'hangoutsMeet' },
+          },
+        },
+      }),
+    }
+  );
+
+  if (!res.ok) {
+    let msg = `Google Calendar API returned HTTP ${res.status}`;
+    try {
+      const err = await res.json();
+      if (err?.error?.message) msg = err.error.message;
+    } catch {}
+    throw new Error(msg);
+  }
+
+  const data = await res.json();
+  const videoEntry = data?.conferenceData?.entryPoints?.find((ep) => ep.entryPointType === 'video')?.uri;
+  const meetUrl = data?.hangoutLink || videoEntry || data?.htmlLink || 'https://meet.google.com/';
+
+  return {
+    eventId: data?.id || null,
+    meetUrl,
+    htmlLink: data?.htmlLink || meetUrl,
+  };
+}
+
+/**
+ * Sanitize legacy /new Meet URLs so tabs never hit redirect loops
+ */
+export function sanitizeMeetUrl(url) {
+  if (!url || /meet\.google\.com\/new\/?(\?.*)?$/i.test(url)) {
+    return 'https://meet.google.com/';
+  }
+  return url;
+}
+
+/**
+ * Open an instant Meet safely in a new tab using Calendar API when signed in
+ */
+export async function launchInstantGoogleMeet({ accessToken, summary, onFallbackToast } = {}) {
+  const newTab = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null;
+  if (newTab) newTab.opener = null;
+
+  if (accessToken) {
+    try {
+      const { meetUrl } = await createGoogleMeetEvent({ accessToken, summary });
+      if (newTab) newTab.location.href = meetUrl;
+      else window.open(meetUrl, '_blank', 'noopener,noreferrer');
+      return { meetUrl, createdViaCalendar: true };
+    } catch (err) {
+      onFallbackToast?.(err?.message || 'Opening Google Meet landing page...');
+    }
+  }
+
+  const fallbackUrl = 'https://meet.google.com/';
+  if (newTab) newTab.location.href = fallbackUrl;
+  else if (typeof window !== 'undefined') window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
+  return { meetUrl: fallbackUrl, createdViaCalendar: false };
 }
