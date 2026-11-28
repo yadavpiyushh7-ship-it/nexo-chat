@@ -6,6 +6,7 @@ import { useGoogleAuth, launchInstantGoogleMeet } from '../lib/googleApis';
 export default function CallsView({ user, onStartCall, onOpenMeetAndMoM }) {
   const { token: googleToken } = useGoogleAuth();
   const [copiedLink, setCopiedLink] = useState(false);
+  const [meetNotice, setMeetNotice] = useState('');
   const [callLogs] = useState([
     {
       id: 'c_bot',
@@ -78,12 +79,16 @@ export default function CallsView({ user, onStartCall, onOpenMeetAndMoM }) {
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() =>
-                  launchInstantGoogleMeet({
+                onClick={async () => {
+                  setMeetNotice('');
+                  const res = await launchInstantGoogleMeet({
                     accessToken: googleToken,
-                    summary: 'Nexo Peer Mock Interview Meet',
-                  })
-                }
+                    onErrorToast: (msg) => setMeetNotice(msg),
+                  });
+                  if (res?.createdViaMeetApi && res.meetingUri) {
+                    setMeetNotice(`Created Meet: ${res.meetingUri}`);
+                  }
+                }}
                 className="flex-1 py-2 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-bold flex items-center justify-center gap-1.5 shadow-xs cursor-pointer"
               >
                 <ExternalLink className="w-3.5 h-3.5" />
@@ -98,6 +103,11 @@ export default function CallsView({ user, onStartCall, onOpenMeetAndMoM }) {
                 <span>Meet & AI MoM</span>
               </button>
             </div>
+            {meetNotice && (
+              <p className="text-[11.5px] font-medium text-[#00a884] dark:text-amber-300 select-text cursor-text">
+                {meetNotice}
+              </p>
+            )}
           </div>
 
           <div

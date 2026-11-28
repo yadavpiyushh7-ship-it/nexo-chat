@@ -18,13 +18,14 @@ import {
   LogOut,
   AlertCircle,
   RefreshCw,
-  Presentation
+  Presentation,
+  Copy
 } from 'lucide-react';
 import { requestAI } from '../lib/aiClient';
 import {
   useGoogleAuth,
   exportPresentationToGoogleSlides,
-  createGoogleMeetEvent,
+  createGoogleMeetSpace,
   launchInstantGoogleMeet,
   sanitizeMeetUrl,
 } from '../lib/googleApis';
@@ -216,6 +217,7 @@ export default function WorkspaceHubView({
   const [newMeetDateTime, setNewMeetDateTime] = useState('');
   const [newMeetType, setNewMeetType] = useState('Mock Interview');
   const [schedulingMeet, setSchedulingMeet] = useState(false);
+  const [copiedMeetUrl, setCopiedMeetUrl] = useState(false);
 
   useEffect(() => {
     if (!user?.id) return;
@@ -529,27 +531,16 @@ export default function WorkspaceHubView({
   const handleCreateScheduleMeet = async (e) => {
     e.preventDefault();
     if (!newMeetTitle.trim() || schedulingMeet) return;
+    if (!googleToken) {
+      onShowToast?.('Please click "Continue with Google" first to create a live Google Meet room.');
+      return;
+    }
     const selectedTarget = chats.find((c) => c.id === targetChatId);
     const titleStr = newMeetTitle.trim();
-    let meetUrl = 'https://meet.google.com/';
-    let createdViaCalendar = false;
 
     setSchedulingMeet(true);
     try {
-      if (googleToken) {
-        try {
-          const res = await createGoogleMeetEvent({
-            accessToken: googleToken,
-            summary: titleStr,
-            description: `${newMeetType} with ${selectedTarget?.name || 'Study Peer'} (Scheduled in Nexo)`,
-          });
-          meetUrl = res.meetUrl;
-          createdViaCalendar = true;
-        } catch (err) {
-          onShowToast?.(err?.message || 'Scheduled locally — reconnect Google for auto Calendar Meet URL.');
-        }
-      }
-
+      const { meetingUri } = await createGoogleMeetSpace({ accessToken: googleToken });
       const created = {
         id: `mt_${Date.now()}`,
         title: titleStr,
@@ -557,30 +548,44 @@ export default function WorkspaceHubView({
         targetChatName: selectedTarget?.name || 'Study Vault',
         host: googleUser?.email ? `Host: ${googleUser.email}` : `Scheduled by ${user?.name || 'You'} (${user?.username || '@piyush_dev'})`,
         time: newMeetDateTime.trim() || 'Today • Instant Meet Link Ready',
-        meetUrl,
+        meetUrl: meetingUri,
         type: newMeetType,
       };
       await persistActiveMeeting(created);
       setNewMeetTitle('');
       setNewMeetDateTime('');
-      onShowToast?.(
-        createdViaCalendar
-          ? 'Google Calendar Meet scheduled with direct room link!'
-          : 'Meeting saved! Sign in with Google for direct room links.'
-      );
+      onShowToast?.(`Google Meet created: ${meetingUri}`);
+    } catch (err) {
+      onShowToast?.(`${err?.message || 'Google Meet creation failed.'} Please click "Continue with Google" again.`);
     } finally {
       setSchedulingMeet(false);
     }
   };
 
   const handleInstantMeetWorkspace = async () => {
-    const { createdViaCalendar } = await launchInstantGoogleMeet({
-      accessToken: googleToken,
-      summary: 'Nexo Instant Google Meet',
-      onFallbackToast: (msg) => onShowToast?.(msg),
-    });
-    if (createdViaCalendar) {
-      onShowToast?.('Google Meet room created via Calendar API!');
+    if (schedulingMeet) return;
+    setSchedulingMeet(true);
+    try {
+      const res = await launchInstantGoogleMeet({
+        accessToken: googleToken,
+        onErrorToast: (msg) => onShowToast?.(msg),
+      });
+      if (res?.createdViaMeetApi && res.meetingUri) {
+        const selectedTarget = chats.find((c) => c.id === targetChatId);
+        await persistActiveMeeting({
+          id: `mt_${Date.now()}`,
+          title: 'Instant Google Meet',
+          targetChatId,
+          targetChatName: selectedTarget?.name || 'Study Vault',
+          host: googleUser?.email ? `Host: ${googleUser.email}` : `Host: ${user?.name || 'You'}`,
+          time: 'Live Now',
+          meetUrl: res.meetingUri,
+          type: 'Instant Meet',
+        });
+        onShowToast?.(`Google Meet room ready: ${res.meetingUri}`);
+      }
+    } finally {
+      setSchedulingMeet(false);
     }
   };
 
@@ -1045,26 +1050,50 @@ export default function WorkspaceHubView({
                     </span>
                   </div>
 
-                  <h4 className="text-[15px] font-bold text-[#111b21] dark:text-[#e9edef]">
+                  <h4 className="text-[15px] font-bold text-[#111b21] dark:text-[#e9edef] select-text cursor-text">
                     {activeMeeting.title}
                   </h4>
-                  <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0]">
+                  <p className="text-[12.5px] text-[#667781] dark:text-[#8696a0] select-text cursor-text">
                     With <strong className="text-[#111b21] dark:text-[#e9edef]">{activeMeeting.targetChatName || 'Study Peer'}</strong> • {activeMeeting.host}
                   </p>
+
+                  {/* Visible Google Meet URL + Copy Link button */}
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 rounded-xl bg-[#f0f2f5] dark:bg-[#202c33] border border-[#e9edef] dark:border-[#222e35]">
+                    <span className="text-[12px] font-mono text-[#00a884] truncate select-text cursor-text">
+                      {sanitizeMeetUrl(activeMeeting.meetUrl)}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const cleanUrl = sanitizeMeetUrl(activeMeeting.meetUrl);
+                        navigator.clipboard?.writeText(cleanUrl);
+                        setCopiedMeetUrl(true);
+                        setTimeout(() => setCopiedMeetUrl(false), 2000);
+                        onShowToast?.('Meet link copied to clipboard!');
+                      }}
+                      className="px-2.5 py-1 rounded-lg bg-white dark:bg-[#111b21] border border-[#e9edef] dark:border-[#222e35] text-[11.5px] font-semibold text-[#111b21] dark:text-[#e9edef] hover:text-[#00a884] flex items-center gap-1 flex-shrink-0 cursor-pointer"
+                    >
+                      {copiedMeetUrl ? <Check className="w-3.5 h-3.5 text-[#00a884]" /> : <Copy className="w-3.5 h-3.5" />}
+                      <span>{copiedMeetUrl ? 'Copied' : 'Copy Link'}</span>
+                    </button>
+                  </div>
 
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     <button
                       type="button"
                       onClick={async () => {
                         const cleanUrl = sanitizeMeetUrl(activeMeeting.meetUrl);
-                        if (cleanUrl === 'https://meet.google.com/' && googleToken) {
-                          const res = await launchInstantGoogleMeet({
-                            accessToken: googleToken,
-                            summary: activeMeeting.title,
-                            onFallbackToast: (m) => onShowToast?.(m),
-                          });
-                          if (res?.meetUrl && res.meetUrl !== cleanUrl) {
-                            persistActiveMeeting({ ...activeMeeting, meetUrl: res.meetUrl });
+                        if (cleanUrl === 'https://meet.google.com/') {
+                          if (!googleToken) {
+                            onShowToast?.('Please click "Continue with Google" first to generate a Meet room.');
+                            return;
+                          }
+                          try {
+                            const { meetingUri } = await createGoogleMeetSpace({ accessToken: googleToken });
+                            await persistActiveMeeting({ ...activeMeeting, meetUrl: meetingUri });
+                            window.open(meetingUri, '_blank', 'noopener,noreferrer');
+                          } catch (err) {
+                            onShowToast?.(`${err?.message || 'Meet error'} — Please click "Continue with Google" again.`);
                           }
                           return;
                         }

@@ -443,11 +443,15 @@ export default function ChatWindow({
                   <button
                     onClick={async () => {
                       setCallDropdownOpen(false);
-                      const { meetUrl } = await launchInstantGoogleMeet({
+                      const res = await launchInstantGoogleMeet({
                         accessToken: googleToken,
-                        summary: `Nexo Meet with ${displayChat.name}`,
+                        onErrorToast: () => {
+                          onOpenMeetAndMoM?.();
+                        },
                       });
-                      onSendMessage?.(`📹 **Google Meet Started!**\n🔗 Join Meet: ${meetUrl}\n📝 Open Workspace → Meet & MoM to auto-generate Minutes of Meeting.`);
+                      if (res?.createdViaMeetApi && res.meetingUri) {
+                        onSendMessage?.(`📹 **Google Meet Started!**\n🔗 Join Meet: ${res.meetingUri}\n📝 Open Workspace → Meet & MoM to auto-generate Minutes of Meeting.`);
+                      }
                       onOpenMeetAndMoM?.();
                     }}
                     className="w-full px-4 py-2.5 flex items-center gap-3 text-[#111b21] dark:text-[#e9edef] hover:bg-[#f0f2f5] dark:hover:bg-[#111b21] text-left cursor-pointer transition-colors"

@@ -5,6 +5,7 @@ export const GOOGLE_OAUTH_SCOPES = [
   'https://www.googleapis.com/auth/gmail.send',
   'https://www.googleapis.com/auth/calendar.readonly',
   'https://www.googleapis.com/auth/calendar.events',
+  'https://www.googleapis.com/auth/meetings.space.created',
   'https://www.googleapis.com/auth/contacts.readonly',
   'https://www.googleapis.com/auth/presentations',
   'https://www.googleapis.com/auth/spreadsheets',
@@ -367,46 +368,24 @@ export async function exportTrackerToGoogleSheets({ accessToken, title, rows }) 
 }
 
 /**
- * Google Calendar API: Create a Calendar event with a dedicated Google Meet link (no /new redirect loop)
+ * Google Meet REST API (v2): Create a real Google Meet space cleanly without /new redirect loops
  */
-export async function createGoogleMeetEvent({
-  accessToken,
-  summary = 'Nexo Study & Placement Meet',
-  description = 'Scheduled via Nexo Workspace Hub',
-  durationMinutes = 45,
-} = {}) {
+export async function createGoogleMeetSpace({ accessToken } = {}) {
   if (!accessToken) {
-    throw new Error('Google OAuth access token required to provision a Calendar Meet link.');
+    throw new Error('Not signed in with Google. Please click "Continue with Google" first.');
   }
 
-  const startDate = new Date(Date.now() + 2 * 60 * 1000);
-  const endDate = new Date(startDate.getTime() + durationMinutes * 60 * 1000);
-
-  const res = await fetch(
-    'https://www.googleapis.com/calendar/v3/calendars/primary/events?conferenceDataVersion=1',
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        summary,
-        description,
-        start: { dateTime: startDate.toISOString() },
-        end: { dateTime: endDate.toISOString() },
-        conferenceData: {
-          createRequest: {
-            requestId: `nexo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            conferenceSolutionKey: { type: 'hangoutsMeet' },
-          },
-        },
-      }),
-    }
-  );
+  const res = await fetch('https://meet.googleapis.com/v2/spaces', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({}),
+  });
 
   if (!res.ok) {
-    let msg = `Google Calendar API returned HTTP ${res.status}`;
+    let msg = `Google Meet API returned HTTP ${res.status}`;
     try {
       const err = await res.json();
       if (err?.error?.message) msg = err.error.message;
@@ -415,14 +394,24 @@ export async function createGoogleMeetEvent({
   }
 
   const data = await res.json();
-  const videoEntry = data?.conferenceData?.entryPoints?.find((ep) => ep.entryPointType === 'video')?.uri;
-  const meetUrl = data?.hangoutLink || videoEntry || data?.htmlLink || 'https://meet.google.com/';
+  const meetingUri =
+    data?.meetingUri ||
+    (data?.meetingCode ? `https://meet.google.com/${data.meetingCode}` : null);
+
+  if (!meetingUri) {
+    throw new Error('Google Meet API did not return a meetingUri.');
+  }
 
   return {
-    eventId: data?.id || null,
-    meetUrl,
-    htmlLink: data?.htmlLink || meetUrl,
+    name: data?.name || null,
+    meetingCode: data?.meetingCode || null,
+    meetingUri,
+    meetUrl: meetingUri,
   };
+}
+
+export async function createGoogleMeetEvent({ accessToken } = {}) {
+  return createGoogleMeetSpace({ accessToken });
 }
 
 /**
@@ -436,25 +425,24 @@ export function sanitizeMeetUrl(url) {
 }
 
 /**
- * Open an instant Meet safely in a new tab using Calendar API when signed in
+ * Open a Google Meet space safely in a new tab with noopener,noreferrer (no Edge/Chrome reload loops)
  */
-export async function launchInstantGoogleMeet({ accessToken, summary, onFallbackToast } = {}) {
-  const newTab = typeof window !== 'undefined' ? window.open('about:blank', '_blank') : null;
-  if (newTab) newTab.opener = null;
-
-  if (accessToken) {
-    try {
-      const { meetUrl } = await createGoogleMeetEvent({ accessToken, summary });
-      if (newTab) newTab.location.href = meetUrl;
-      else window.open(meetUrl, '_blank', 'noopener,noreferrer');
-      return { meetUrl, createdViaCalendar: true };
-    } catch (err) {
-      onFallbackToast?.(err?.message || 'Opening Google Meet landing page...');
-    }
+export async function launchInstantGoogleMeet({ accessToken, onErrorToast } = {}) {
+  if (!accessToken) {
+    const errMsg = 'Please click "Continue with Google" to create a Google Meet room.';
+    onErrorToast?.(errMsg);
+    return { meetUrl: null, createdViaMeetApi: false, error: errMsg };
   }
 
-  const fallbackUrl = 'https://meet.google.com/';
-  if (newTab) newTab.location.href = fallbackUrl;
-  else if (typeof window !== 'undefined') window.open(fallbackUrl, '_blank', 'noopener,noreferrer');
-  return { meetUrl: fallbackUrl, createdViaCalendar: false };
+  try {
+    const { meetingUri } = await createGoogleMeetSpace({ accessToken });
+    if (typeof window !== 'undefined') {
+      window.open(meetingUri, '_blank', 'noopener,noreferrer');
+    }
+    return { meetUrl: meetingUri, meetingUri, createdViaMeetApi: true };
+  } catch (err) {
+    const msg = `${err?.message || 'Failed to create Google Meet space.'} Please click "Continue with Google" again.`;
+    onErrorToast?.(msg);
+    return { meetUrl: null, createdViaMeetApi: false, error: msg };
+  }
 }
